@@ -30,6 +30,7 @@
 | Django | 未インストール | Phase 6 まで不要 |
 | git | 2.54.0 ✓ | `my-application/` は git 管理下。`corekeeper_layout/` は管理外のまま |
 | gh (GitHub CLI) | 2.102.0 ✓ | winget で導入。`Budou128256` で認証済み（scopes: repo / read:org / gist） |
+| 資格情報の注意 | **2系統ある** | Windows の資格情報マネージャは停止済みの別アカウント `greap-lmkn` を返すため、このリポジトリのローカル設定で `credential.https://github.com.helper` を `gh auth git-credential` に向けている。**別の場所に clone したら同じ設定が必要**（無いと push が 403） |
 
 ---
 
