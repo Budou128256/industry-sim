@@ -5,6 +5,9 @@
  */
 
 import { DELTA, footprint, rotatedSize } from '../core/grid.js';
+import { minerOutput } from '../core/miner.js';
+import { craftTicks, recipeFor } from '../core/machine.js';
+import { TICK_HZ } from '../core/sim.js';
 
 export class Renderer {
   constructor(canvas, registry) {
@@ -89,6 +92,13 @@ export class Renderer {
     }
     ctx.stroke();
 
+    // 鉱脈（地面の層。建物の下）
+    for (const [k, item] of world.resources) {
+      const [x, y] = k.split(',').map(Number);
+      if (x < x0 - 1 || x > x1 || y < y0 - 1 || y > y1) continue;
+      this.drawResource(x, y, item);
+    }
+
     // 建物（見えている範囲だけ描く）
     world.forEach(bld => {
       const size = rotatedSize(bld.size, bld.dir);
@@ -147,12 +157,64 @@ export class Renderer {
       if (!b || !list.length || !visible(b.x, b.y)) continue;
       this.drawStack(b.x, b.y, list, 'container');
     }
+    for (const [id, m] of sim.machines) {
+      const b = world.buildings.get(id);
+      if (b && visible(b.x, b.y)) this.drawMachine(b, m);
+    }
+    for (const id of sim.miners.keys()) {
+      const b = world.buildings.get(id);
+      if (b && visible(b.x, b.y)) this.drawMinerOutput(b);
+    }
     for (const [k, list] of sim.ground) {
       if (!list.length) continue;
       const [x, y] = k.split(',').map(Number);
       if (!visible(x, y)) continue;
       this.drawStack(x, y, list, 'ground');
     }
+  }
+
+  drawResource(x, y, item) {
+    const ctx = this.ctx, t = this.tile;
+    const { px, py } = this.toScreen(x, y);
+    const def = this.registry.item(item) || {};
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = def.color || '#94a3b8';
+    ctx.fillRect(px + 1, py + 1, t - 2, t - 2);
+    ctx.globalAlpha = 0.9;
+    for (const [fx, fy] of [[0.28, 0.3], [0.68, 0.42], [0.42, 0.72]]) {   // 鉱石の粒
+      ctx.beginPath();
+      ctx.arc(px + t * fx, py + t * fy, Math.max(1.5, t * 0.08), 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** 加工機: 入力（左下）・出力（右下）・進み具合（下の帯）。 */
+  drawMachine(b, m) {
+    const ctx = this.ctx, t = this.tile;
+    const size = rotatedSize(b.size, b.dir);
+    const { px, py } = this.toScreen(b.x, b.y);
+    const w = size.width * t, h = size.height * t;
+    if (m.input) this.drawStack(b.x, b.y + size.height - 1, [m.input], 'ground-like');
+    if (m.output) this.drawStack(b.x + size.width - 1, b.y + size.height - 1, [m.output], 'container');
+    const recipe = m.input && recipeFor(this.registry, b.type, m.input.item);
+    const pct = recipe ? m.progress / craftTicks(recipe, TICK_HZ) : 0;
+    ctx.fillStyle = '#0b0e15';
+    ctx.fillRect(px + 4, py + h - 7, w - 8, 4);
+    ctx.fillStyle = m.state === '出力が満杯' ? '#f87171' : '#4ade80';
+    ctx.fillRect(px + 4, py + h - 7, (w - 8) * Math.min(1, pct), 4);
+  }
+
+  /** 採掘機の出し先のマスに小さな印。 */
+  drawMinerOutput(b) {
+    const ctx = this.ctx, t = this.tile;
+    const o = minerOutput(b);
+    const { px, py } = this.toScreen(o.x, o.y);
+    ctx.strokeStyle = 'rgba(250,204,21,0.7)';
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
+    ctx.setLineDash([]);
   }
 
   drawStack(x, y, list, where) {
@@ -162,7 +224,8 @@ export class Renderer {
     const n = list.reduce((a, s) => a + s.count, 0);
     const r = t * 0.2;
     // 床は左下、ベルトは中央、箱は右下に小さく
-    const cx = where === 'ground' ? px + t * 0.28 : where === 'container' ? px + t * 0.72 : px + t / 2;
+    const left = where === 'ground' || where === 'ground-like';
+    const cx = left ? px + t * 0.28 : where === 'container' ? px + t * 0.72 : px + t / 2;
     const cy = where === 'belt' ? py + t / 2 : py + t * 0.72;
     ctx.fillStyle = item.color || '#e5e7eb';
     ctx.strokeStyle = where === 'ground' ? '#f87171' : '#0b0e15';

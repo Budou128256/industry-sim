@@ -19,6 +19,8 @@ export class World {
     this.buildings = new Map();
     /** @type {Map<string, number>} "x,y" -> building id */
     this.occupancy = new Map();
+    /** @type {Map<string, string>} "x,y" -> 鉱脈のアイテム id（地面の層。建物とは重ねて置ける） */
+    this.resources = new Map();
     /** 変更のたびに増える。描画側が「描き直すべきか」を判断するのに使う。 */
     this.revision = 0;
   }
@@ -49,6 +51,19 @@ export class World {
     return building;
   }
 
+  /** そのマスの鉱脈（アイテム id）。無ければ null。 */
+  resourceAt(x, y) {
+    return this.resources.get(key(x, y)) || null;
+  }
+
+  /** 鉱脈を置く。item が null なら取り除く。 */
+  setResource(x, y, item) {
+    const k = key(x, y);
+    if ((this.resources.get(k) || null) === item) return;
+    if (item) this.resources.set(k, item); else this.resources.delete(k);
+    this.revision++;
+  }
+
   /** 置いてある建物を順に渡す。 */
   forEach(fn) {
     for (const b of this.buildings.values()) fn(b);
@@ -63,6 +78,10 @@ export class World {
       width: this.width,
       height: this.height,
       buildings: [...this.buildings.values()].map(({ type, x, y, dir }) => ({ type, x, y, dir })),
+      resources: [...this.resources].map(([k, item]) => {
+        const [x, y] = k.split(',').map(Number);
+        return { x, y, item };
+      }),
     };
   }
 
@@ -74,6 +93,7 @@ export class World {
       if (!def) continue;                 // 知らない建物は黙って飛ばす（データが増減しても壊れない）
       w.add({ type: b.type, x: b.x, y: b.y, dir: b.dir || 'N', size: def.size });
     }
+    for (const r of data.resources || []) w.setResource(r.x, r.y, r.item);
     return w;
   }
 }

@@ -11,11 +11,11 @@
 
 | 項目 | 状態 |
 |---|---|
-| 段階 | **Phase 2 完了 → 次は Phase 3（Recipe / Machine / Production）** |
+| 段階 | **Phase 3 完了 → 次は Phase 4（Power / Fluid / Storage）** |
 | 置き場所 | `Desktop/drive-download-20260614T075216Z-3-001/my-application/`（**git 管理下**・ブランチ main） |
 | remote | `origin` = https://github.com/Budou128256/industry-sim （**Private**）。以後は `git push` で上がる |
-| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ Phase 1（置く・消す・回す・連続設置）/ GitHub へ push / **Phase 2（ベルト・アーム・床・時間）** |
-| 次の作業 | Phase 3 の実装（下の「次にやること」） |
+| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ Phase 1（置く・消す・回す・連続設置）/ GitHub へ push / Phase 2（ベルト・アーム・床・時間）/ **Phase 3（鉱脈・採掘機・炉）** |
+| 次の作業 | Phase 4 の実装（下の「次にやること」） |
 | 動かし方 | `py -3 serve.py` → http://127.0.0.1:8080/ （テストは `/tests.html`） |
 
 ---
@@ -50,7 +50,7 @@
 - [x] **Phase 0** 準備: git init ✓ / 責務分離の設計メモ（ARCHITECTURE.md）✓ / 決定事項の確定 ✓
 - [x] **Phase 1** Grid / Building / Item / Placement ✓ 2026-10-05（テスト19件すべて成功）
 - [x] **Phase 2** Belt / Item transportation / Inserter ✓ 2026-10-05（テスト38件すべて成功）
-- [ ] **Phase 3** Recipe / Machine / Production
+- [x] **Phase 3** Recipe / Machine / Production ✓ 2026-10-05（テスト52件すべて成功）
 - [ ] **Phase 4** Power / Fluid / Storage
 - [ ] **Phase 5** Chunk / 最適化 / Web Worker
 - [ ] **Phase 6** Save・Load / User / API
@@ -96,11 +96,11 @@
 
 1. この `PLAN.md` と [ARCHITECTURE.md](ARCHITECTURE.md) を読む
 2. `py -3 serve.py` で動かし、`/tests.html` が全部成功することを確かめる（いまの状態の確認）
-3. Phase 3 を実装する（**実装前に方針を説明して合意を取る**）:
-   - 炉・採掘機を `src/core/` の機械として動かす（レシピは `data/recipes`）
-   - アームが機械へ入れる／機械から出す（今は機械のマスに置くと床に落ちる）
-   - 参考: `../corekeeper_layout/static/sim.js` の `stepProcessors` / `put`（扱えない原料は入らない等）
-4. テストを足す（加工・原料待ち・出力が満杯）
+3. Phase 4 を実装する（**実装前に方針を説明して合意を取る**）:
+   - 電力: 発電機から導体をたどって届く範囲（`../corekeeper_layout/static/sim.js` の `computePower`）。
+     採掘機・炉・アームに「電力が要る」を data で持たせ、届かなければ止める
+   - 液体・保管の範囲は指示書を確認してから決める
+4. テストを足す（給電範囲・電力なしで止まる）
 5. この表と段階チェックを更新してコミットし、`git push` で GitHub へ上げる
 
 ## Phase 2 で決めたこと・やったこと（2026-10-05）
@@ -112,10 +112,22 @@
 | ベルト | つながったベルトを線にまとめて動かす。1マスに何スタックでも載り、合体しない。合流点で線を切る。輪も回る |
 | アーム | 正面から1スタック取り、背面へ置く。入りきらない分は背面の床へ。床の物も拾う |
 | 床 | 同じ種類は1つの山にまとまる |
-| 撤去 | 中身はそのマスの床に落ちる（**実機で確かめていない。Claude の判断**）。回転では中身を引き継ぐ |
+| 撤去 | 中身はそのマスの床に落ちる（Core Keeper の挙動と合っていることをユーザーが確認 2026-10-05）。回転では中身を引き継ぐ |
 | 保存 | `Sim.toJSON()` / `fromJSON()` で中身も保存できる（座標で持つ） |
 | 動作確認 | 「アイテムを置く」でマスに10個置ける（採掘機が動くまでの仮の道具） |
 | 入れていないもの | スプリッター（分岐）、アームのフィルタ、回収機、電力、回路、ドリル |
+
+## Phase 3 で決めたこと・やったこと（2026-10-05）
+
+| 項目 | 内容 |
+|---|---|
+| 炉 | sim.js と同じ規則。入力1スタック・出力1スタック。扱えない物・入力と違う種類は入らず床へ。アームは出力だけ取る。出力が満杯なら止まる |
+| レシピ | `data/recipes` の `machines` にその建物があるもの。加工時間は `craftTime`（今は 3.2 秒。Core Keeper の実際の値は未確認）。**材料1種類・製品1種類**のレシピだけ扱う |
+| 鉱脈 | ユーザーが選択。World の地面の層（`world.resources`）。「鉱脈を置く」で置き、右クリックで消す。`data/items` で `resource: true` のものだけ。**掘っても減らない** |
+| 採掘機 | 下の鉱脈から `miner.periodSeconds`（2秒）ごとに1個。出し先は向いた方向の左前のマス（点線）。ベルトなら上へ、それ以外は床へ |
+| 時間の順 | 加工機 → ベルト → 採掘機 → アーム（採掘機はベルトの後。出した物が同じ tick に進まないように） |
+| 電力 | まだ無い。全部電力なしで動く（Phase 4） |
+| 入れていないもの | 燃料、複数材料のレシピ、鉱脈の残量、採掘機の進み具合の保存 |
 
 ## Phase 1 でできること（2026-10-05 時点）
 
