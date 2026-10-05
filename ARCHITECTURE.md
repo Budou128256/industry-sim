@@ -8,7 +8,6 @@
 | 項目 | 決定 | 理由 |
 |---|---|---|
 | 言語 | **素のJavaScript（ESモジュール）** | この環境に Node.js / npm が無く、TypeScript をビルドできない。構造は指示書どおりに保ち、Node を入れた時点で型を足して移行できるようにする |
-| Django | **Phase 6 まで後回し** | 指示書でも Phase 6。それまでは保存先をブラウザ内に閉じる |
 | 置き場所 | `my-application/`（git 管理下） | 新規に作る。履歴を残す |
 | 既存ツール | `../corekeeper_layout/` は**今の場所のまま・機能も維持** | 壊さない。資産として参照し、移植は段階的に行う |
 
@@ -69,5 +68,5 @@ my-application/
 | 3 | Recipe / Machine / Production | 機械が材料を食べて製品を出す |
 | 4 | Power / Fluid / Storage | 電力網・液体・保管 |
 | 5 | Chunk / 最適化 / Web Worker | 大きなマップでも重くならない |
-| 6 | Django / 保存・読込 / API | ワールドと設計図をサーバに保存 |
+| 6 | 保存・読込 / API | ワールドと設計図をサーバに保存 |
 | 7 | 高度な物流 / 研究 / AI | — |

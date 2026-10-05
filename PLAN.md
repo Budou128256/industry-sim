@@ -26,8 +26,7 @@
 |---|---|---|
 | Node.js / npm | **無し**（`node: command not found`） | **TypeScript をビルドできない。npm も使えない** |
 | Python | 3.14.5 ✓ | シミュレータ・サーバ側は問題なし |
-| pip | 26.1.1 ✓（ネット接続可） | Django は `py -3 -m pip install django` で入る見込み |
-| Django | 未インストール | Phase 6 まで不要 |
+| pip | 26.1.1 ✓（ネット接続可） | 追加のライブラリは `py -3 -m pip install` で入る見込み |
 | git | 2.54.0 ✓ | `my-application/` は git 管理下。`corekeeper_layout/` は管理外のまま |
 | gh (GitHub CLI) | 2.102.0 ✓ | winget で導入。`Budou128256` で認証済み（scopes: repo / read:org / gist） |
 | 資格情報の注意 | **2系統ある** | Windows の資格情報マネージャは停止済みの別アカウント `greap-lmkn` を返すため、このリポジトリのローカル設定で `credential.https://github.com.helper` を `gh auth git-credential` に向けている。**別の場所に clone したら同じ設定が必要**（無いと push が 403） |
@@ -39,7 +38,6 @@
 | 項目 | 決定 |
 |---|---|
 | 言語 | **素のJavaScript（ESモジュール）**。Node が無く TS をビルドできないため。構造は指示書どおり |
-| Django | **Phase 6 まで後回し**（指示書どおり） |
 | 置き場所 | **`my-application/`**（git 管理下・ブランチ main） |
 | 既存ツール | `../corekeeper_layout/` は**今の場所のまま・機能も維持**。移動も削除もしない |
 
@@ -55,7 +53,7 @@
 - [ ] **Phase 3** Recipe / Machine / Production
 - [ ] **Phase 4** Power / Fluid / Storage
 - [ ] **Phase 5** Chunk / 最適化 / Web Worker
-- [ ] **Phase 6** Django / Save・Load / User / API
+- [ ] **Phase 6** Save・Load / User / API
 - [ ] **Phase 7** Advanced logistics / Research / AI / Multiplayer
 
 ---
