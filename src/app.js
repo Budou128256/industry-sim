@@ -9,7 +9,7 @@
  */
 
 import { Registry } from './core/registry.js';
-import { canPlace, dragDirection, lineCells } from './core/placement.js';
+import { canPlace, pathCells } from './core/placement.js';
 import { rotateCW } from './core/grid.js';
 import { TICK_HZ } from './core/sim.js';
 import { Renderer } from './render/renderer.js';
@@ -32,7 +32,6 @@ const state = {
   selected: null,     // 選んでいる建物の id（ITEM_TOOL ならアイテムを置く道具）
   running: false,     // 再生中か
   dir: 'N',           // これから置く向き
-  dragged: new Set(), // 1回のドラッグで置いたマス
 };
 
 const $ = id => document.getElementById(id);
@@ -189,29 +188,17 @@ function onCommand(cmd) {
       break;
     }
     case 'place': {
-      state.dragged.clear();
       if (paint) { setResource([{ x: cmd.x, y: cmd.y }]); break; }
       if (tool) { addItems(cmd.x, cmd.y); break; }
       if (!def) { inspect(cmd.x, cmd.y); break; }
-      state.dragged.add(`${cmd.x},${cmd.y}`);
-      tryPlace(def, [{ x: cmd.x, y: cmd.y, dir: state.dir }]);
+      placeResult(def, state.client.call('dragStart', { type: def.id, x: cmd.x, y: cmd.y, dir: state.dir }), 1);
       break;
     }
     case 'drag': {
-      if (paint) {
-        setResource(lineCells(cmd.from, cmd.to), true);
-        break;
-      }
+      const cells = pathCells(cmd.from, cmd.to);     // マウスの通った道（上下左右に隣り合う順）
+      if (paint) { setResource(cells, true); break; }
       if (!def) break;
-      const dir = def.directional ? (dragDirection(cmd.from, cmd.to) || state.dir) : state.dir;
-      const cells = [];
-      for (const c of lineCells(cmd.from, cmd.to)) {
-        const k = `${c.x},${c.y}`;
-        if (state.dragged.has(k)) continue;
-        state.dragged.add(k);
-        cells.push({ x: c.x, y: c.y, dir });
-      }
-      if (cells.length) tryPlace(def, cells);
+      placeResult(def, state.client.call('dragTo', { cells }), cells.length);
       break;
     }
     case 'remove': {
@@ -245,10 +232,10 @@ function onCommand(cmd) {
   }
 }
 
-/** 置く（判定と設置は Worker が行う。cells: [{ x, y, dir }]） */
-async function tryPlace(def, cells) {
-  const r = await state.client.call('place', { type: def.id, cells });
-  if (r.placed === cells.length) {
+/** 置いた結果を出す（判定と設置は Worker が行う）。tried: 置こうとしたマスの数 */
+async function placeResult(def, call, tried) {
+  const r = await call;
+  if (r.placed === tried) {
     const c = r.last;
     status(r.placed === 1 ? `${def.name} を (${c.x}, ${c.y}) に設置` : `${def.name} を ${r.placed} 個設置`);
   } else if (r.reason) status(r.reason, true);
