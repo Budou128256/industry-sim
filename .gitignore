@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ビルド成果物
+build/
+dist/
+*.spec
+
+# エディタ / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Wikiから保存したアイコン（ローカル利用限定。再取得は tools/fetch_icons.py）
+# 公開リポジトリへ上げる場合は、この行を有効にする
+# **/static/icons/
