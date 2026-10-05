@@ -1,6 +1,6 @@
 {
   "id": "copper-plate",
-  "name": "銅板",
+  "name": "銅板(テスト)",
   "inputs": {
     "copper-ore": 1
   },
