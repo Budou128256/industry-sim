@@ -16,8 +16,12 @@ import { Renderer } from './render/renderer.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
 import { SimClient } from './client.js';
+import { loadLocal, saveLocal } from './storage.js';
 
 const BOARD = { width: 64, height: 64 };
+/** ブラウザの中に自動保存する名前と間隔。 */
+const AUTOSAVE = 'autosave';
+const AUTOSAVE_MS = 5000;
 const EMPTY = { tick: 0, seconds: 0, count: 0, ...BOARD, rect: { x0: 0, y0: 0, x1: -1, y1: -1 },
                 buildings: [], resources: [], power: [], unpowered: [], busy: [],
                 belts: [], containers: [], machines: [], miners: [], ground: [] };
@@ -31,6 +35,8 @@ const state = {
   renderer: null,
   selected: null,     // 選んでいる建物の id（ITEM_TOOL ならアイテムを置く道具）
   running: false,     // 再生中か
+  version: 0,         // 届いた写しの version（盤面が変わるたびに増える）
+  savedVersion: -1,   // 最後に自動保存したときの version
   dir: 'N',           // これから置く向き
 };
 
@@ -48,7 +54,12 @@ async function main() {
   state.renderer = new Renderer($('board'), state.registry);
   state.renderer.resize();
 
-  state.client = new SimClient(snap => { setView(snap); state.fresh = true; requestDraw(); });
+  state.client = new SimClient(snap => {
+    setView(snap);
+    state.version = snap.version;
+    state.fresh = true;
+    requestDraw();
+  });
   await state.client.start(state.registry, { dataUrl: new URL('data', location.href).href, ...BOARD });
   $('mode').textContent = state.client.mode === 'worker' ? 'Worker で計算中' : '画面と同じスレッドで計算中';
   sendView();
@@ -67,6 +78,10 @@ async function main() {
     state.dir = rotateCW(state.dir);
     status(`これから置く向き: ${state.dir}`);
   };
+
+  $('btnExport').onclick = exportFile;
+  $('btnImport').onclick = () => $('fileImport').click();
+  $('fileImport').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); };
 
   $('btnPlay').onclick = togglePlay;
   $('btnPower').onclick = () => {
@@ -88,7 +103,84 @@ async function main() {
   } else {
     status(`読み込み完了 — 建物 ${state.registry.buildings.size} 種 / アイテム ${state.registry.items.size} 種`);
   }
+  await restoreAutosave();
+  setInterval(autosave, AUTOSAVE_MS);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
   draw();
+}
+
+/* ---------- 保存・読込（Phase 6） ---------- */
+
+/** 前回の自動保存があれば、その続きから始める。 */
+async function restoreAutosave() {
+  let data;
+  try { data = await loadLocal(AUTOSAVE); } catch (e) {
+    console.warn('ブラウザの中への保存が使えません:', e);
+    $('saveState').textContent = '自動保存は使えません';
+    return;
+  }
+  if (!data) return;
+  try {
+    const r = await state.client.call('load', { data });
+    status(`前回の続きを読み込みました（${when(r.savedAt)} に保存・建物 ${r.count}）`
+      + (r.skipped ? ` — 知らない・置けない建物 ${r.skipped} 個を飛ばしました` : ''), !!r.skipped);
+  } catch (e) {
+    // 読めなかった自動保存は、上書きされる前に別の名前で残しておく
+    try { await saveLocal(`${AUTOSAVE}-unreadable`, data); } catch { /* 残せなくても続ける */ }
+    status(`前回の自動保存を読めませんでした: ${e.message}（「${AUTOSAVE}-unreadable」として残しました）`, true);
+  }
+}
+
+/** 盤面が変わっていれば、ブラウザの中に保存する。 */
+async function autosave() {
+  if (!state.client || state.version === state.savedVersion) return;
+  const version = state.version;
+  try {
+    const data = await state.client.call('save');
+    await saveLocal(AUTOSAVE, data);
+    state.savedVersion = version;
+    $('saveState').textContent = `自動保存 ${when(data.savedAt)}`;
+  } catch (e) {
+    $('saveState').textContent = '自動保存できません';
+    console.warn('自動保存できません:', e);
+  }
+}
+
+async function exportFile() {
+  const data = await state.client.call('save');
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const d = new Date(data.savedAt), pad = n => String(n).padStart(2, '0');
+  a.download = `industry-sim-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
+    + `-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  status(`${a.download} に書き出しました（建物 ${data.world.buildings.length}）`);
+}
+
+async function importFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch {
+    status(`${file.name} は JSON として読めません`, true);
+    return;
+  }
+  try {
+    stop();
+    const r = await state.client.call('load', { data });
+    status(`${file.name} を読み込みました（${when(r.savedAt)} に保存・建物 ${r.count}）`
+      + (r.skipped ? ` — 知らない・置けない建物 ${r.skipped} 個を飛ばしました` : ''), !!r.skipped);
+    autosave();
+  } catch (e) {
+    status(`${file.name} を読み込めません: ${e.message}`, true);
+  }
+}
+
+/** 保存した時刻を短く書く。 */
+function when(iso) {
+  if (!iso) return '時刻不明';
+  const d = new Date(iso), pad = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function buildPalette() {
@@ -331,6 +423,7 @@ function draw() {
 function status(text, warn = false) {
   const el = $('status');
   el.textContent = text;
+  el.title = text;            // 長くて切れたときは、マウスを乗せると全部読める
   el.style.color = warn ? '#fca5a5' : '';
 }
 

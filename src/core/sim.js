@@ -302,6 +302,8 @@ export class Sim {
       machines: [...this.machines].filter(([, m]) => m.input || m.output || m.progress)
         .map(([id, m]) => ({ ...at(id), input: m.input && { ...m.input },
                              output: m.output && { ...m.output }, progress: m.progress, state: m.state })),
+      miners: [...this.miners].filter(([, m]) => m.progress || m.cursor)
+        .map(([id, m]) => ({ ...at(id), progress: m.progress, cursor: m.cursor })),
       produced: { ...this.produced },
       ground: [...this.ground].filter(([, l]) => l.length).map(([k, l]) => {
         const { x, y } = parseKey(k);
@@ -331,6 +333,11 @@ export class Sim {
         input: e.input ? { ...e.input } : null, output: e.output ? { ...e.output } : null,
         progress: e.progress || 0, state: e.state || sim.machines.get(b.id).state,
       });
+    }
+    for (const e of data.miners || []) {
+      const b = world.at(e.x, e.y);
+      if (!b || !sim.miners.has(b.id)) continue;
+      Object.assign(sim.miners.get(b.id), { progress: e.progress || 0, cursor: e.cursor || 0 });
     }
     sim.produced = { ...(data.produced || {}) };
     for (const e of data.ground || []) sim.ground.set(key(e.x, e.y), e.stacks.map(s => ({ ...s })));
