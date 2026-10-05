@@ -52,7 +52,7 @@ src/
     inserter.js   アーム（正面から取り、背面へ置く）
     inventory.js  保管箱のスロットとスタックの列
     machine.js    加工機（炉）。レシピで原料を製品に変える
-    miner.js      採掘機。下の鉱脈から掘って正面へ出す
+    miner.js      採掘機。正面の鉱脈を掘って背面へ出す
   render/         World を読んで描くだけ
   input/          入力をコマンドに変えるだけ（World は触らない）
   app.js          上記をつなぐ唯一の層

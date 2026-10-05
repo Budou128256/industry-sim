@@ -2,15 +2,15 @@
   "id": "miner",
   "name": "採掘機",
   "size": {
-    "width": 2,
-    "height": 2
+    "width": 1,
+    "height": 1
   },
   "color": "#6b7f99",
   "directional": true,
   "tags": [
     "production"
   ],
-  "note": "下の鉱脈から2秒に1個掘り、正面の左前のマスへ出す（ベルトなら上へ、それ以外は床へ）",
+  "note": "正面のマスの鉱脈から2秒に1個掘り、背面（向きの逆）のマスへ出す（ベルトなら上へ、それ以外は床へ）",
   "miner": {
     "periodSeconds": 2,
     "amount": 1

@@ -5,7 +5,7 @@
  */
 
 import { DELTA, footprint, rotatedSize } from '../core/grid.js';
-import { minerOutput } from '../core/miner.js';
+import { minerOutput, minerTargets } from '../core/miner.js';
 import { craftTicks, recipeFor } from '../core/machine.js';
 import { TICK_HZ } from '../core/sim.js';
 
@@ -205,16 +205,19 @@ export class Renderer {
     ctx.fillRect(px + 4, py + h - 7, (w - 8) * Math.min(1, pct), 4);
   }
 
-  /** 採掘機の出し先のマスに小さな印。 */
+  /** 採掘機の掘るマス（水色の点線）と出し先のマス（黄色の点線）。 */
   drawMinerOutput(b) {
     const ctx = this.ctx, t = this.tile;
-    const o = minerOutput(b);
-    const { px, py } = this.toScreen(o.x, o.y);
-    ctx.strokeStyle = 'rgba(250,204,21,0.7)';
-    ctx.setLineDash([3, 3]);
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
-    ctx.setLineDash([]);
+    const mark = (c, color) => {
+      const { px, py } = this.toScreen(c.x, c.y);
+      ctx.strokeStyle = color;
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
+      ctx.setLineDash([]);
+    };
+    for (const c of minerTargets(b)) mark(c, 'rgba(56,189,248,0.75)');
+    mark(minerOutput(b), 'rgba(250,204,21,0.75)');
   }
 
   drawStack(x, y, list, where) {

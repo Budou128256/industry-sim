@@ -147,7 +147,7 @@ const simDefs = {
   chest: { id: 'chest', size: SIZE_1, directional: false, container: { slots: 2 } },
   furnace: defFurnace,
   smelter: { id: 'smelter', size: SIZE_2, directional: false, machine: {} },
-  miner: { id: 'miner', size: SIZE_2, directional: true, miner: { periodSeconds: 2, amount: 1 } },
+  miner: { id: 'miner', size: SIZE_1, directional: true, miner: { periodSeconds: 2, amount: 1 } },
 };
 const simReg = {
   building: id => simDefs[id],
@@ -425,23 +425,26 @@ test('鉱脈は置けて、消せて、保存できる', () => {
   eq(back.resourceAt(1, 1), 'ore');
   eq(back.resources.size, 1);
 });
-test('採掘機は2秒に1個掘って、正面の左前のマスの床に出す', () => {
+test('採掘機は正面の鉱脈を2秒に1個掘って、背面（向きの逆）のマスの床に出す', () => {
   const w = simWorld(6, 6);
-  for (const [x, y] of [[2, 2], [3, 2], [2, 3], [3, 3]]) w.setResource(x, y, 'ore');
-  put(w, 'miner', 2, 2, 'E');                    // 右向き → 出し先は (4, 2)
+  w.setResource(3, 2, 'ore');                    // 採掘機の正面
+  put(w, 'miner', 2, 2, 'E');                    // 右向き → 出し先は左の (1, 2)
   const sim = new Sim(w, simReg);
   run(sim, 1);
-  eq(sim.contentsAt(4, 2).ground, [], '2秒たたないうちに出た');
+  eq(sim.contentsAt(1, 2).ground, [], '2秒たたないうちに出た');
   run(sim, 1);
-  eq(sim.contentsAt(4, 2).ground, [{ item: 'ore', count: 1 }]);
+  eq(sim.contentsAt(1, 2).ground, [{ item: 'ore', count: 1 }]);
   run(sim, 4);
-  eq(sim.contentsAt(4, 2).ground, [{ item: 'ore', count: 3 }]);
+  eq(sim.contentsAt(1, 2).ground, [{ item: 'ore', count: 3 }]);
+  eq(sim.contentsAt(3, 2).ground, [], '正面に出てしまった');
   eq(sim.contentsAt(2, 2).miner.state, '採掘中');
 });
-test('出し先の向きは回すと変わる', () => {
+test('掘るのは正面、出し先は向きの逆', () => {
   const w = simWorld(6, 6);
-  w.setResource(2, 2, 'ore');
-  for (const [dir, cell] of [['N', [2, 1]], ['E', [4, 2]], ['S', [3, 4]], ['W', [1, 3]]]) {
+  for (const [dir, cell, front] of [['N', [2, 3], [2, 1]], ['E', [1, 2], [3, 2]],
+                                    ['S', [2, 1], [2, 3]], ['W', [3, 2], [1, 2]]]) {
+    w.resources.clear();
+    w.setResource(...front, 'ore');
     const b = put(w, 'miner', 2, 2, dir);
     const sim = new Sim(w, simReg);
     run(sim, 2);
@@ -451,32 +454,35 @@ test('出し先の向きは回すと変わる', () => {
 });
 test('採掘機の出し先がベルトならベルトに載る', () => {
   const w = simWorld(8, 4);
-  w.setResource(0, 0, 'ore');
-  put(w, 'miner', 0, 0, 'E'); put(w, 'belt', 2, 0, 'E'); put(w, 'belt', 3, 0, 'E');
+  w.setResource(0, 1, 'ore');
+  put(w, 'miner', 1, 1, 'W'); put(w, 'belt', 2, 1, 'E'); put(w, 'belt', 3, 1, 'E');
   const sim = new Sim(w, simReg);
   run(sim, 2);
-  eq(total(sim.contentsAt(2, 0).belt), 1);
+  eq(total(sim.contentsAt(2, 1).belt), 1);
 });
-test('鉱脈が無ければ掘らない', () => {
+test('鉱脈が正面に無ければ掘らない（真下にあっても掘らない）', () => {
   const w = simWorld(6, 6);
+  w.setResource(2, 2, 'ore');
   put(w, 'miner', 2, 2, 'E');
   const sim = new Sim(w, simReg);
   run(sim, 4);
   eq(sim.totals().onGround, 0);
   eq(sim.contentsAt(2, 2).miner.state, '鉱脈なし');
 });
-test('下に何種類かあれば順番に掘る', () => {
+test('大きな採掘機は正面の列の何種類かを順番に掘る', () => {
+  const big = { ...simReg, building: id => (id === 'bigMiner'
+    ? { id, size: SIZE_2, directional: true, miner: { periodSeconds: 2, amount: 1 } } : simDefs[id]) };
   const w = simWorld(6, 6);
-  w.setResource(2, 2, 'ore'); w.setResource(3, 3, 'plate');
-  put(w, 'miner', 2, 2, 'E');
-  const sim = new Sim(w, simReg);
+  w.setResource(1, 2, 'ore'); w.setResource(1, 3, 'plate');   // 左向きの正面の列
+  place(w, big.building('bigMiner'), 2, 2, 'W');   // 2x2、出し先は右の (4, 2)
+  const sim = new Sim(w, big);
   run(sim, 4);
   eq(sim.contentsAt(4, 2).ground, [{ item: 'ore', count: 1 }, { item: 'plate', count: 1 }]);
 });
 test('鉱脈 → 採掘機 → ベルト → 床 → アーム → 炉 → アーム → 箱 で製品ができる', () => {
   const w = new World({ width: 12, height: 6 });
-  for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]]) w.setResource(x, y, 'ore');
-  put(w, 'miner', 0, 0, 'E');                    // 出し先 (2,0)
+  w.setResource(0, 0, 'ore');
+  put(w, 'miner', 1, 0, 'W');                    // 正面 (0,0) を掘り、背面 (2,0) へ
   put(w, 'belt', 2, 0, 'E'); put(w, 'belt', 3, 0, 'E');   // (4,0) の床へ
   put(w, 'inserter', 5, 0, 'W');                 // (4,0) から取り (6,0) へ
   put(w, 'smelter', 6, 0);                       // (6..7, 0..1)
@@ -506,6 +512,8 @@ test('ベルト・アーム・保管箱の挙動が data に書いてある', ()
   ok(reg.building('furnace').machine, 'furnace に machine の定義が無い');
   ok(reg.building('miner').miner, 'miner に miner の定義が無い');
   ok(reg.item('iron-ore').resource, '鉄鉱石が鉱脈になれない');
+  for (const id of ['miner', 'furnace', 'generator']) eq(reg.building(id).size, { width: 1, height: 1 }, `${id} が 1x1 でない`);
+  for (const r of reg.recipes.values()) eq(r.craftTime, 10, `${r.id} の加工時間が10秒でない`);
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {

@@ -152,7 +152,7 @@ function selectBuilding(id) {
   }
   if (id === RESOURCE_TOOL) {
     state.renderer.ghost = null;
-    status(`クリック・ドラッグで ${itemName($('itemSel').value)} の鉱脈を置きます（右クリックで消す）。採掘機をその上に置くと掘ります`);
+    status(`クリック・ドラッグで ${itemName($('itemSel').value)} の鉱脈を置きます（右クリックで消す）。採掘機を鉱脈の方へ向けて隣に置くと掘ります`);
     return;
   }
   if (id === ITEM_TOOL) {
