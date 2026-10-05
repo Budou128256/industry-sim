@@ -22,14 +22,26 @@ export function rotateCW(dir) {
   return DIRS[(DIRS.indexOf(dir) + 1) % 4];
 }
 
-/** マスの鍵。Map のキーに使う。 */
+/* マスの鍵。Map のキーに使う。
+ * 文字列（"x,y"）は作るのも引くのも遅いので、数値にする（Phase 5）。
+ * -8192〜8191 の座標が重ならずに入る。鍵を 2^28 未満に収めて、JS エンジンが
+ * 小さな整数として速く扱える範囲にしている（それを超えると Map が数倍遅くなった）。 */
+const SPAN = 16384, OFF = 8192;
+
 export function key(x, y) {
-  return `${x},${y}`;
+  return (y + OFF) * SPAN + (x + OFF);
 }
 
 export function parseKey(k) {
-  const [x, y] = k.split(',').map(Number);
-  return { x, y };
+  return { x: (k % SPAN) - OFF, y: Math.floor(k / SPAN) - OFF };
+}
+
+/** チャンク（盤面を区切った正方形）の一辺のマス数。 */
+export const CHUNK = 32;
+
+/** そのマスが入るチャンクの座標。 */
+export function chunkOf(x, y) {
+  return { cx: Math.floor(x / CHUNK), cy: Math.floor(y / CHUNK) };
 }
 
 /** 向きを考えた占有の大きさ。N/S はそのまま、E/W は縦横が入れ替わる。 */

@@ -3,7 +3,7 @@
 ブラウザで動く、汎用の工業シミュレーション基盤。
 特定のゲームの複製ではなく、**データ（`data/` の JSON）を足すだけで中身が増える土台**を作ることが目的。
 
-段階的に作っており、現在は **Phase 4（電力）** まで。
+段階的に作っており、現在は **Phase 5a（チャンク・差分の計算）** まで。
 進行状況と次にやることは [PLAN.md](PLAN.md)、設計の約束は [ARCHITECTURE.md](ARCHITECTURE.md) にあります。
 
 ## 動かす
@@ -14,7 +14,9 @@ Node.js は使いません。Python 3 があれば動きます。
 py -3 serve.py
 ```
 
-→ http://127.0.0.1:8080/ （テストは http://127.0.0.1:8080/tests.html ）
+→ http://127.0.0.1:8080/ （テストは http://127.0.0.1:8080/tests.html 、速さの測定は http://127.0.0.1:8080/bench.html ）
+
+GitHub Codespaces（Linux）では `py` が無いので `python3 serve.py` で動かし、ポート 8080 を開きます。
 
 ES モジュール（`import` / `export`）は `file://` では読み込めないため、
 標準ライブラリだけの小さな HTTP サーバ（`serve.py`）経由で開きます。
@@ -41,14 +43,16 @@ ES モジュール（`import` / `export`）は `file://` では読み込めな�
 index.html        画面
 serve.py          開発用サーバ（標準ライブラリのみ）
 tests.html        テストの実行ページ
+bench.html        速さの測定ページ（大きな盤面を敷き詰めて時間を測る）
 data/             中身の定義（items / buildings / recipes）。index.json が目録
 src/
   core/           盤面の論理。DOM も描画も知らない
     registry.js   data/ を読んで定義を保持する
-    grid.js       座標・向き・大きさ
-    world.js      建物の集合と占有マス（物の層・床の層）。保存/復元
+    grid.js       座標・向き・大きさ・マスの鍵（数値）
+    chunks.js     盤面を 32x32 の区画に分けて、マスごとの値を持つ
+    world.js      建物の集合と占有マス（物の層・床の層・鉱脈。チャンクで持つ）。変更の記録。保存/復元
     placement.js  置ける/置けないの判定、設置・撤去・回転・線引き
-    sim.js        時間を進める（1秒 = 20 tick）。中身（ベルト・箱・床）の持ち主
+    sim.js        時間を進める（1秒 = 20 tick）。中身（ベルト・箱・床）の持ち主。変わった所の近くだけ計算し直す
     belt.js       ベルトを線にまとめて運ぶ
     inserter.js   アーム（正面から取り、背面へ置く）
     inventory.js  保管箱のスロットとスタックの列
@@ -59,6 +63,7 @@ src/
   input/          入力をコマンドに変えるだけ（World は触らない）
   app.js          上記をつなぐ唯一の層
   tests.js        core の自動テスト
+  bench.js        速さの測定
 ```
 
 守っている約束（詳細は ARCHITECTURE.md）:
@@ -70,8 +75,8 @@ src/
 
 ## テスト
 
-Node が無いのでブラウザで走らせます。`tests.html` を開くと core のテスト（58 件）が走ります。
+Node が無いのでブラウザで走らせます。`tests.html` を開くと core のテスト（63 件）が走ります。
 
 ## 予定
 
-Phase 5 以降でチャンク、Web Worker、保存へ進みます。液体・保管の拡張は未定です。
+Phase 5b で Web Worker、Phase 6 で保存へ進みます。液体・保管の拡張は未定です。

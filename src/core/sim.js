@@ -9,22 +9,25 @@
  *   belts      建物 id -> スタックの列（ベルトの上）
  *   containers 建物 id -> { slots }（保管箱）
  *   machines   建物 id -> { input, output, progress, state }（加工機）
- *   ground     "x,y"   -> スタックの列（床。同じ種類は1つの山にまとまる）
+ *   ground     マスの鍵 -> スタックの列（床。同じ種類は1つの山にまとまる）
  *
- * World は編集で変わる。step() の前に sync() で追いつく。
+ * World は編集で変わる。step() の前に sync() で追いつく（変わった所の近くだけ計算し直す）。
  *   - 撤去された建物の中身は、その建物があったマスの床に落とす
  *   - 回転（撤去して同じ場所に置き直す）では中身を引き継ぐ
  */
 
-import { key } from './grid.js';
-import { buildBeltLines, stepBelts } from './belt.js';
+import { footprint, key, parseKey } from './grid.js';
+import { beltDef, buildBeltLines, sortBeltLines, stepBelts } from './belt.js';
 import { inserterDef, stepInserters } from './inserter.js';
 import { machinePut, makeMachine, stepMachines } from './machine.js';
 import { makeMiner, stepMiners } from './miner.js';
-import { computePower, isPowered } from './power.js';
+import { computePower, isPowered, updatePower } from './power.js';
 import { containerAdd, containerTotal, makeContainer, pileMerge, pilePush, pileTotal, stackLimit } from './inventory.js';
 
 export const TICK_HZ = 20;
+
+/** 上の行から、同じ行なら左から（アームを動かす順。結果を毎回同じにする）。 */
+const byPosition = (a, b) => (a.y - b.y) || (a.x - b.x);
 
 export class Sim {
   constructor(world, registry) {
@@ -39,7 +42,8 @@ export class Sim {
     this.produced = {};        // 作った数の累計（item -> 個数）
     this.ground = new Map();
     this.beltLines = [];
-    this.power = new Map();      // "x,y" -> 電力の強さ（World が変わったときに求め直す）
+    this.lineOf = new Map();     // ベルトの id -> そのベルトが入っている線
+    this.power = new Map();      // マスの鍵（grid.js の key） -> 電力の強さ（World が変わった所だけ求め直す）
     this.unpowered = new Set();  // 電気が要るのに届いていない建物の id
     this.inserters = [];
     this.events = [];          // このtickにアームが動かしたもの
@@ -64,31 +68,139 @@ export class Sim {
     for (const st of stacks) pileMerge(this.groundAt(x, y, true), st.item, st.count, this.limit(st.item));
   }
 
-  /** World の変更に追いつく。 */
+  /**
+   * World の変更に追いつく。
+   * World の変更の記録（changes）が読めれば、変わった所の近くだけを計算し直す（Phase 5）。
+   * 読めなければ（初回・記録が古すぎる）盤面全体を計算し直す。どちらでも結果は同じ。
+   */
   sync() {
     const world = this.world;
     if (world.revision === this.rev) return;
+    const changes = this.rev < 0 ? null : world.changesSince(this.rev);
     this.rev = world.revision;
+    if (changes) this.syncChanges(changes);
+    else this.syncAll();
+  }
 
+  /** 盤面全体を見て追いつく。 */
+  syncAll() {
+    const world = this.world;
     const removed = [];
     for (const [id, old] of this.known) if (!world.buildings.has(id)) removed.push({ id, ...old });
+    const added = [];
+    world.forEach(b => { if (!this.known.has(b.id)) added.push(b); });
+    this.applyContents(removed, added);
 
-    world.forEach(b => {
-      if (this.known.has(b.id)) return;
+    this.known = new Map();
+    world.forEach(b => this.known.set(b.id, { type: b.type, x: b.x, y: b.y }));
+    this.beltLines = buildBeltLines(world, this.registry);
+    this.lineOf = new Map();
+    for (const l of this.beltLines) for (const id of l.ids) this.lineOf.set(id, l);
+    this.power = computePower(world, this.registry);
+    this.unpowered = new Set();
+    world.forEach(b => { if (!isPowered(this.power, this.registry, b)) this.unpowered.add(b.id); });
+    const ins = [];
+    world.forEach(b => { if (inserterDef(this.registry, b)) ins.push(b); });
+    this.inserters = ins.sort(byPosition);
+  }
+
+  /** 変更の記録から、変わった所の近くだけ追いつく。 */
+  syncChanges(changes) {
+    const { world, registry } = this;
+    const removed = [], added = [], cells = [];
+    let belts = false, power = false;
+    for (const c of changes) {
+      if (c.op === 'resource') continue;          // 鉱脈は採掘機が毎回 World から読む
+      const b = c.building;
+      const def = registry.building(b.type) || {};
+      if (c.op === 'remove' && this.known.has(b.id)) removed.push({ id: b.id, ...this.known.get(b.id), building: b });
+      if (c.op === 'add' && world.buildings.has(b.id) && !this.known.has(b.id)) added.push(b);
+      for (const p of footprint(b.x, b.y, b.size, b.dir)) cells.push(p);
+      if (def.belt) belts = true;
+      if (def.power) power = true;
+    }
+    // 前の sync の後に置いてすぐ消した建物は、どちらにも入らない
+    this.applyContents([...removed], added);      // 回した分は applyContents が removed から抜くので写しを渡す
+    for (const r of removed) this.known.delete(r.id);
+    for (const b of added) this.known.set(b.id, { type: b.type, x: b.x, y: b.y });
+
+    if (belts) this.updateBeltLines(removed, cells);
+    if (power) {
+      const touched = updatePower(world, registry, this.power, cells);
+      for (const r of removed) this.unpowered.delete(r.id);
+      const check = new Set(added);
+      for (const c of touched) for (const b of [world.at(c.x, c.y), world.floorAt(c.x, c.y)]) if (b) check.add(b);
+      for (const b of check) {
+        if (isPowered(this.power, registry, b)) this.unpowered.delete(b.id);
+        else this.unpowered.add(b.id);
+      }
+    } else {
+      for (const r of removed) this.unpowered.delete(r.id);
+      for (const b of added) if (!isPowered(this.power, registry, b)) this.unpowered.add(b.id);
+    }
+    // アームの列: 並び順を保ったまま抜き差しする（全部を並べ直さない）
+    for (const r of removed) {
+      if (!inserterDef(registry, r.building)) continue;
+      const i = this.inserters.findIndex(b => b.id === r.id);
+      if (i >= 0) this.inserters.splice(i, 1);
+    }
+    for (const b of added) {
+      if (!inserterDef(registry, b)) continue;
+      let lo = 0, hi = this.inserters.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (byPosition(this.inserters[mid], b) < 0) lo = mid + 1; else hi = mid; }
+      this.inserters.splice(lo, 0, b);
+    }
+  }
+
+  /**
+   * 変わったマスから2マス以内にかかるベルトの線だけ作り直す。
+   * ベルトが同じ線で続くかは「自分・次のベルト・次のベルトの隣」で決まるので、2マス以内で足りる。
+   */
+  updateBeltLines(removed, cells) {
+    const { world, registry } = this;
+    const hit = new Set();
+    for (const r of removed) hit.add(r.id);
+    for (const c of cells) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2 + Math.abs(dy); dx <= 2 - Math.abs(dy); dx++) {
+          const b = world.at(c.x + dx, c.y + dy);
+          if (b && beltDef(registry, b)) hit.add(b.id);
+        }
+      }
+    }
+    const dropped = new Set();
+    const subset = new Map();
+    for (const id of hit) {
+      const line = this.lineOf.get(id);
+      if (line && !dropped.has(line)) {
+        dropped.add(line);
+        for (const lid of line.ids) this.lineOf.delete(lid);
+        for (const lid of line.ids) { const b = world.buildings.get(lid); if (b) subset.set(lid, b); }
+      }
+      const b = world.buildings.get(id);
+      if (b && beltDef(registry, b)) subset.set(id, b);
+    }
+    const fresh = buildBeltLines(world, registry, [...subset.values()]);
+    for (const l of fresh) for (const id of l.ids) this.lineOf.set(id, l);
+    this.beltLines = sortBeltLines(world, this.beltLines.filter(l => !dropped.has(l)).concat(fresh));
+  }
+
+  /** 撤去された建物の中身を床へ落とし、置かれた建物の中身の入れ物を作る。回しただけなら引き継ぐ。 */
+  applyContents(removed, added) {
+    for (const b of added) {
       // 同じ種類が同じ場所から消えていれば、回しただけ。中身を引き継ぐ
       const i = removed.findIndex(r => r.type === b.type && r.x === b.x && r.y === b.y);
       if (i >= 0) {
         const r = removed.splice(i, 1)[0];
         this.move(r.id, b.id);
-        return;
+        continue;
       }
       const def = this.registry.building(b.type) || {};
       if (def.belt) this.belts.set(b.id, []);
       if (def.container) this.containers.set(b.id, makeContainer(def.container.slots || 1));
       if (def.machine) this.machines.set(b.id, makeMachine());
       if (def.miner) this.miners.set(b.id, makeMiner());
-    });
-
+    }
     for (const r of removed) {
       if (this.belts.has(r.id)) this.dropToGround(r.x, r.y, this.belts.get(r.id));
       if (this.containers.has(r.id)) {
@@ -103,16 +215,6 @@ export class Sim {
       this.machines.delete(r.id);
       this.miners.delete(r.id);
     }
-
-    this.known = new Map();
-    world.forEach(b => this.known.set(b.id, { type: b.type, x: b.x, y: b.y }));
-    this.beltLines = buildBeltLines(world, this.registry);
-    this.power = computePower(world, this.registry);
-    this.unpowered = new Set();
-    world.forEach(b => { if (!isPowered(this.power, this.registry, b)) this.unpowered.add(b.id); });
-    const ins = [];
-    world.forEach(b => { if (inserterDef(this.registry, b)) ins.push(b); });
-    this.inserters = ins.sort((a, b) => (a.y - b.y) || (a.x - b.x));
   }
 
   move(fromId, toId) {
@@ -202,7 +304,7 @@ export class Sim {
                              output: m.output && { ...m.output }, progress: m.progress, state: m.state })),
       produced: { ...this.produced },
       ground: [...this.ground].filter(([, l]) => l.length).map(([k, l]) => {
-        const [x, y] = k.split(',').map(Number);
+        const { x, y } = parseKey(k);
         return { x, y, stacks: copy(l) };
       }),
     };

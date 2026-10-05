@@ -3,11 +3,17 @@
  * ここが唯一「いま何がどこにあるか」を知っている場所。
  * **描画も DOM も知らない。** 後で Web Worker に移せるよう、ブラウザのAPIを使わない。
  *
- * いまは 1 枚のマップとして持つが、Chunk へ広げられるよう
- * 外から見える操作（at / add / remove / forEach）だけを使ってもらう。
+ * マスごとの層（設置物・床・鉱脈）は**チャンク**（chunks.js）で持つ（Phase 5）。
+ * 外からは at / floorAt / resourceAt / add / remove / forEach / buildingsIn を使ってもらう。
+ *
+ * 変更は changes に記録する。Sim はこれを読んで、変わった所の近くだけを計算し直す。
  */
 
-import { footprint, key } from './grid.js';
+import { footprint } from './grid.js';
+import { ChunkLayer } from './chunks.js';
+
+/** changes に残す数。これより古い変更を読みたい Sim は全部を計算し直す。 */
+const CHANGE_LOG_LIMIT = 4096;
 
 let nextId = 1;
 
@@ -17,25 +23,41 @@ export class World {
     this.height = height;
     /** @type {Map<number, object>} id -> building */
     this.buildings = new Map();
-    /** @type {Map<string, number>} "x,y" -> building id（設置物の層） */
-    this.occupancy = new Map();
-    /** @type {Map<string, number>} "x,y" -> building id（床の層。電線など。設置物と同じマスに置ける） */
-    this.floor = new Map();
-    /** @type {Map<string, string>} "x,y" -> 鉱脈のアイテム id（地面の層。建物とは重ねて置ける） */
-    this.resources = new Map();
+    /** 設置物の層: マス -> building id */
+    this.occupancy = new ChunkLayer();
+    /** 床の層（電線など。設置物と同じマスに置ける）: マス -> building id */
+    this.floor = new ChunkLayer();
+    /** 地面の層（鉱脈。建物とは重ねて置ける）: マス -> アイテム id */
+    this.resources = new ChunkLayer();
     /** 変更のたびに増える。描画側が「描き直すべきか」を判断するのに使う。 */
     this.revision = 0;
+    /** 変更の記録: { rev, op: 'add' | 'remove' | 'resource', building?, x?, y? }（古いものから捨てる） */
+    this.changes = [];
+  }
+
+  record(change) {
+    change.rev = ++this.revision;
+    this.changes.push(change);
+    if (this.changes.length > CHANGE_LOG_LIMIT * 2) this.changes.splice(0, this.changes.length - CHANGE_LOG_LIMIT);
+  }
+
+  /** rev より後の変更。記録が足りない（古すぎる）ときは null。 */
+  changesSince(rev) {
+    if (rev === this.revision) return [];
+    const first = this.changes.length ? this.changes[0].rev : this.revision + 1;
+    if (rev < first - 1) return null;
+    return this.changes.filter(c => c.rev > rev);
   }
 
   /** そのマスにある建物。無ければ null。 */
   at(x, y) {
-    const id = this.occupancy.get(key(x, y));
+    const id = this.occupancy.get(x, y);
     return id === undefined ? null : this.buildings.get(id);
   }
 
   /** そのマスの床の層の建物（電線など）。無ければ null。 */
   floorAt(x, y) {
-    const id = this.floor.get(key(x, y));
+    const id = this.floor.get(x, y);
     return id === undefined ? null : this.buildings.get(id);
   }
 
@@ -47,8 +69,8 @@ export class World {
     const b = { id: nextId++, type, x, y, dir, size, layer };
     this.buildings.set(b.id, b);
     const occ = this.layerMap(layer);
-    for (const c of footprint(x, y, size, dir)) occ.set(key(c.x, c.y), b.id);
-    this.revision++;
+    for (const c of footprint(x, y, size, dir)) occ.set(c.x, c.y, b.id);
+    this.record({ op: 'add', building: b });
     return b;
   }
 
@@ -57,24 +79,23 @@ export class World {
     if (!building || !this.buildings.has(building.id)) return null;
     const occ = this.layerMap(building.layer);
     for (const c of footprint(building.x, building.y, building.size, building.dir)) {
-      if (occ.get(key(c.x, c.y)) === building.id) occ.delete(key(c.x, c.y));
+      if (occ.get(c.x, c.y) === building.id) occ.delete(c.x, c.y);
     }
     this.buildings.delete(building.id);
-    this.revision++;
+    this.record({ op: 'remove', building });
     return building;
   }
 
   /** そのマスの鉱脈（アイテム id）。無ければ null。 */
   resourceAt(x, y) {
-    return this.resources.get(key(x, y)) || null;
+    return this.resources.get(x, y) || null;
   }
 
   /** 鉱脈を置く。item が null なら取り除く。 */
   setResource(x, y, item) {
-    const k = key(x, y);
-    if ((this.resources.get(k) || null) === item) return;
-    if (item) this.resources.set(k, item); else this.resources.delete(k);
-    this.revision++;
+    if ((this.resources.get(x, y) || null) === item) return;
+    if (item) this.resources.set(x, y, item); else this.resources.delete(x, y);
+    this.record({ op: 'resource', x, y });
   }
 
   /** 置いてある建物を順に渡す。 */
@@ -84,6 +105,15 @@ export class World {
 
   get count() { return this.buildings.size; }
 
+  /** 矩形 [x0..x1] x [y0..y1] に1マスでもかかっている建物（床の層を先に）。範囲にかかるチャンクだけ見る。 */
+  buildingsIn(x0, y0, x1, y1) {
+    const seen = new Set(), out = [];
+    const take = (x, y, id) => { if (!seen.has(id)) { seen.add(id); out.push(this.buildings.get(id)); } };
+    this.floor.forEachIn(x0, y0, x1, y1, take);
+    this.occupancy.forEachIn(x0, y0, x1, y1, take);
+    return out;
+  }
+
   /** 保存用の素のデータにする（Phase 6 でサーバへ送る形の原型）。 */
   toJSON() {
     return {
@@ -91,10 +121,11 @@ export class World {
       width: this.width,
       height: this.height,
       buildings: [...this.buildings.values()].map(({ type, x, y, dir }) => ({ type, x, y, dir })),
-      resources: [...this.resources].map(([k, item]) => {
-        const [x, y] = k.split(',').map(Number);
-        return { x, y, item };
-      }),
+      resources: (() => {
+        const out = [];
+        this.resources.forEach((x, y, item) => out.push({ x, y, item }));
+        return out;
+      })(),
     };
   }
 
