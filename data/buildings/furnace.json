@@ -1,14 +1,15 @@
 {
   "id": "furnace",
-  "name": "炉",
+  "name": "炉(テスト)",
   "size": {
-    "width": 2,
-    "height": 2
+    "width": 1,
+    "height": 1
   },
   "color": "#9a6b55",
   "directional": false,
   "tags": [
     "production"
   ],
-  "note": "レシピで精錬する（Phase 3 で実装）"
+  "note": "レシピで精錬する。入力1スタック・出力1スタック。扱えない物は入らない",
+  "machine": {}
 }

@@ -3,7 +3,8 @@
  * 規則（corekeeper_layout/static/sim.js と同じ。Core Keeper の実機確認に基づく）:
  *   - 決まった間隔（data の inserter.periodSeconds）に1回動く
  *   - 1回に1スタック丸ごと持つ（amount が数値なら、その数まで）
- *   - 取る順: そのマスの建物の中身（ベルト → 保管箱）、空なら**そのマスの床**
+ *   - 取る順: そのマスの建物の中身（ベルト → 保管箱 → 加工機の出力）、空なら**そのマスの床**
+ *   - 加工機へ置くと入力へ入る。扱えない物・入力と違う種類の物は入らず床へ（machine.js）
  *   - 置き先に入りきらない分は、**置こうとしたマスの床**に落とす。
  *     「置けないから拾わない」ではなく、拾って溢れさせる
  *   - 置き先がベルトなら、その上に載る（何スタックでも載る）
@@ -13,6 +14,7 @@
 import { DELTA, OPPOSITE, inBounds } from './grid.js';
 import { beltDef } from './belt.js';
 import { containerAdd, containerPeek, containerTake, pileMerge, pilePush } from './inventory.js';
+import { machinePut, machineTake } from './machine.js';
 
 export function inserterDef(registry, building) {
   const def = building && registry.building(building.type);
@@ -45,6 +47,9 @@ function takeFrom(sim, cell, max) {
       const got = containerTake(ch, top.slot, Math.min(max, top.count));
       return { item: top.item, count: got };
     }
+  } else if (b && sim.machines.has(b.id)) {
+    const got = machineTake(sim.machines.get(b.id), max);
+    if (got) return got;
   }
   const ground = sim.groundAt(cell.x, cell.y);
   if (ground && ground.length) {
@@ -73,6 +78,8 @@ function deliverTo(sim, cell, item, count) {
     left = 0;
   } else if (b && sim.containers.has(b.id)) {
     left -= containerAdd(sim.containers.get(b.id), item, left, limit);
+  } else if (b && sim.machines.has(b.id)) {
+    left -= machinePut(sim.registry, b, sim.machines.get(b.id), item, left);
   }
   if (left > 0) pileMerge(sim.groundAt(cell.x, cell.y, true), item, left, limit);
   return left;

@@ -1,9 +1,9 @@
 {
   "id": "generator",
-  "name": "発電機",
+  "name": "発電機(テスト)",
   "size": {
-    "width": 2,
-    "height": 2
+    "width": 1,
+    "height": 1
   },
   "color": "#d4b13f",
   "directional": false,

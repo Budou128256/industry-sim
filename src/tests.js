@@ -146,10 +146,13 @@ const simDefs = {
   inserter: { id: 'inserter', size: SIZE_1, directional: true, inserter: { periodSeconds: 1, amount: 'stack' } },
   chest: { id: 'chest', size: SIZE_1, directional: false, container: { slots: 2 } },
   furnace: defFurnace,
+  smelter: { id: 'smelter', size: SIZE_2, directional: false, machine: {} },
+  miner: { id: 'miner', size: SIZE_1, directional: true, miner: { periodSeconds: 2, amount: 1 } },
 };
 const simReg = {
   building: id => simDefs[id],
   item: id => ({ ore: { id: 'ore', stackSize: 10 }, plate: { id: 'plate', stackSize: 10 } }[id]),
+  recipes: new Map([['plate', { id: 'plate', inputs: { ore: 1 }, outputs: { plate: 1 }, craftTime: 1, machines: ['smelter'] }]]),
 };
 function simWorld(w = 10, h = 3) { return new World({ width: w, height: h }); }
 function put(w, id, x, y, dir = 'N') { return place(w, simDefs[id], x, y, dir); }
@@ -325,6 +328,173 @@ test('中身ごと保存して読み戻せる', () => {
   eq(back.contentsAt(5, 1).ground, [{ item: 'ore', count: 2 }]);
 });
 
+/* ---- 加工機（Phase 3） ---- */
+const machineAt = (sim, x, y) => sim.contentsAt(x, y).machine;
+test('炉は原料を1つずつ製品に変える', () => {
+  const w = simWorld(6, 3);
+  put(w, 'smelter', 1, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 0, 'ore', 3);
+  eq(machineAt(sim, 1, 0).state, '原料待ち', '置いた直後の状態');
+  for (let i = 0; i < 19; i++) sim.step();
+  eq(machineAt(sim, 1, 0).output, null, '1秒たたないうちにできた');
+  sim.step();
+  eq(machineAt(sim, 1, 0).output, { item: 'plate', count: 1 });
+  eq(machineAt(sim, 1, 0).input, { item: 'ore', count: 2 });
+  run(sim, 2);
+  eq(machineAt(sim, 1, 0).output, { item: 'plate', count: 3 });
+  eq(machineAt(sim, 1, 0).input, null);
+  eq(machineAt(sim, 1, 0).state, '原料待ち');
+  eq(sim.totals().produced, { plate: 3 });
+});
+test('出力が満杯なら止まる', () => {
+  const w = simWorld(6, 3);
+  put(w, 'smelter', 1, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 0, 'ore', 10); run(sim, 10);           // 出力 10 = 上限
+  sim.addItems(1, 0, 'ore', 2); run(sim, 3);
+  const m = machineAt(sim, 1, 0);
+  eq(m.state, '出力が満杯');
+  eq(m.output.count, 10);
+  eq(m.input.count, 2);
+});
+test('炉が扱えない物は入らず、置いたマスの床に落ちる', () => {
+  const w2 = new World({ width: 6, height: 4 });
+  put(w2, 'chest', 0, 0); put(w2, 'inserter', 0, 1, 'N'); put(w2, 'smelter', 0, 2);
+  const s2 = new Sim(w2, simReg);
+  s2.addItems(0, 0, 'plate', 4);                           // 板は炉の原料ではない
+  run(s2, 1);
+  eq(machineAt(s2, 0, 2).input, null, '扱えない物が入った');
+  eq(s2.contentsAt(0, 2).ground, [{ item: 'plate', count: 4 }]);
+});
+test('入力と違う種類の物は入らない', () => {
+  const reg2 = { ...simReg, recipes: new Map([...simReg.recipes,
+    ['plate2', { id: 'plate2', inputs: { plate: 1 }, outputs: { ore: 1 }, craftTime: 1, machines: ['smelter'] }]]) };
+  const w = simWorld(6, 3);
+  put(w, 'smelter', 1, 0);
+  const sim = new Sim(w, reg2);
+  sim.addItems(1, 0, 'ore', 2);
+  eq(sim.addItems(1, 0, 'plate', 2), 'ground');
+  eq(machineAt(sim, 1, 0).input, { item: 'ore', count: 2 });
+});
+test('アームは炉の出力だけを取る', () => {
+  const w = new World({ width: 3, height: 5 });
+  put(w, 'smelter', 0, 0); put(w, 'inserter', 0, 2, 'N'); put(w, 'chest', 0, 3);
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 5);
+  run(sim, 1);                                              // まだ製品が無い → 原料は取らない
+  eq(machineAt(sim, 0, 0).input.count >= 4, true, '原料を持っていかれた');
+  run(sim, 6);
+  eq(machineAt(sim, 0, 0).input, null);
+  eq(total(sim.contentsAt(0, 3).container.slots.filter(Boolean)), 5);
+});
+test('箱 → アーム → 炉 → アーム → 箱 で原料が全部製品になる', () => {
+  const w = new World({ width: 3, height: 7 });
+  put(w, 'chest', 0, 0); put(w, 'inserter', 0, 1, 'N');
+  put(w, 'smelter', 0, 2);                                  // (0..1, 2..3)
+  put(w, 'inserter', 0, 4, 'N'); put(w, 'chest', 0, 5);
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 8);
+  run(sim, 12);
+  eq(sim.contentsAt(0, 5).container.slots.filter(Boolean), [{ item: 'plate', count: 8 }]);
+  eq(sim.totals().onGround, 0);
+});
+test('炉を撤去すると中身は床に落ち、保存すると中身も残る', () => {
+  const w = simWorld(6, 3);
+  put(w, 'smelter', 1, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 0, 'ore', 3); run(sim, 1); sim.step();
+  const saved = JSON.parse(JSON.stringify({ world: w, sim }));
+  const back = Sim.fromJSON(saved.sim, World.fromJSON(saved.world, simReg), simReg);
+  eq(machineAt(back, 1, 0), machineAt(sim, 1, 0));
+  removeAt(w, 2, 1);
+  eq(sim.contentsAt(1, 0).ground, [{ item: 'ore', count: 2 }, { item: 'plate', count: 1 }]);
+});
+
+/* ---- 鉱脈と採掘機（Phase 3） ---- */
+test('鉱脈は置けて、消せて、保存できる', () => {
+  const w = simWorld(4, 4);
+  const r0 = w.revision;
+  w.setResource(1, 1, 'ore');
+  eq(w.resourceAt(1, 1), 'ore');
+  ok(w.revision > r0, '鉱脈を置いても revision が増えない');
+  w.setResource(2, 1, 'ore');
+  w.setResource(2, 1, null);
+  eq(w.resourceAt(2, 1), null);
+  const back = World.fromJSON(JSON.parse(JSON.stringify(w)), simReg);
+  eq(back.resourceAt(1, 1), 'ore');
+  eq(back.resources.size, 1);
+});
+test('採掘機は正面の鉱脈を2秒に1個掘って、背面（向きの逆）のマスの床に出す', () => {
+  const w = simWorld(6, 6);
+  w.setResource(3, 2, 'ore');                    // 採掘機の正面
+  put(w, 'miner', 2, 2, 'E');                    // 右向き → 出し先は左の (1, 2)
+  const sim = new Sim(w, simReg);
+  run(sim, 1);
+  eq(sim.contentsAt(1, 2).ground, [], '2秒たたないうちに出た');
+  run(sim, 1);
+  eq(sim.contentsAt(1, 2).ground, [{ item: 'ore', count: 1 }]);
+  run(sim, 4);
+  eq(sim.contentsAt(1, 2).ground, [{ item: 'ore', count: 3 }]);
+  eq(sim.contentsAt(3, 2).ground, [], '正面に出てしまった');
+  eq(sim.contentsAt(2, 2).miner.state, '採掘中');
+});
+test('掘るのは正面、出し先は向きの逆', () => {
+  const w = simWorld(6, 6);
+  for (const [dir, cell, front] of [['N', [2, 3], [2, 1]], ['E', [1, 2], [3, 2]],
+                                    ['S', [2, 1], [2, 3]], ['W', [3, 2], [1, 2]]]) {
+    w.resources.clear();
+    w.setResource(...front, 'ore');
+    const b = put(w, 'miner', 2, 2, dir);
+    const sim = new Sim(w, simReg);
+    run(sim, 2);
+    eq(total(sim.contentsAt(...cell).ground), 1, `${dir} 向きの出し先が違う`);
+    w.remove(b);
+  }
+});
+test('採掘機の出し先がベルトならベルトに載る', () => {
+  const w = simWorld(8, 4);
+  w.setResource(0, 1, 'ore');
+  put(w, 'miner', 1, 1, 'W'); put(w, 'belt', 2, 1, 'E'); put(w, 'belt', 3, 1, 'E');
+  const sim = new Sim(w, simReg);
+  run(sim, 2);
+  eq(total(sim.contentsAt(2, 1).belt), 1);
+});
+test('鉱脈が正面に無ければ掘らない（真下にあっても掘らない）', () => {
+  const w = simWorld(6, 6);
+  w.setResource(2, 2, 'ore');
+  put(w, 'miner', 2, 2, 'E');
+  const sim = new Sim(w, simReg);
+  run(sim, 4);
+  eq(sim.totals().onGround, 0);
+  eq(sim.contentsAt(2, 2).miner.state, '鉱脈なし');
+});
+test('大きな採掘機は正面の列の何種類かを順番に掘る', () => {
+  const big = { ...simReg, building: id => (id === 'bigMiner'
+    ? { id, size: SIZE_2, directional: true, miner: { periodSeconds: 2, amount: 1 } } : simDefs[id]) };
+  const w = simWorld(6, 6);
+  w.setResource(1, 2, 'ore'); w.setResource(1, 3, 'plate');   // 左向きの正面の列
+  place(w, big.building('bigMiner'), 2, 2, 'W');   // 2x2、出し先は右の (4, 2)
+  const sim = new Sim(w, big);
+  run(sim, 4);
+  eq(sim.contentsAt(4, 2).ground, [{ item: 'ore', count: 1 }, { item: 'plate', count: 1 }]);
+});
+test('鉱脈 → 採掘機 → ベルト → 床 → アーム → 炉 → アーム → 箱 で製品ができる', () => {
+  const w = new World({ width: 12, height: 6 });
+  w.setResource(0, 0, 'ore');
+  put(w, 'miner', 1, 0, 'W');                    // 正面 (0,0) を掘り、背面 (2,0) へ
+  put(w, 'belt', 2, 0, 'E'); put(w, 'belt', 3, 0, 'E');   // (4,0) の床へ
+  put(w, 'inserter', 5, 0, 'W');                 // (4,0) から取り (6,0) へ
+  put(w, 'smelter', 6, 0);                       // (6..7, 0..1)
+  put(w, 'inserter', 8, 0, 'W');                 // 炉の (7,0) から取り (9,0) へ
+  put(w, 'chest', 9, 0);
+  const sim = new Sim(w, simReg);
+  run(sim, 30);
+  const plates = sim.contentsAt(9, 0).container.slots.filter(Boolean).reduce((a, s) => a + s.count, 0);
+  ok(plates >= 10, `30秒で板が ${plates} 個しかできていない ${JSON.stringify(sim.totals())}`);
+  eq(sim.totals().produced.ore, 15);
+});
+
 /* ---- registry（データを実際に読む） ---- */
 const reg = await Registry.load('data');
 test('data/ を読める', () => {
@@ -339,6 +509,11 @@ test('ベルト・アーム・保管箱の挙動が data に書いてある', ()
   ok(reg.building('belt').belt, 'belt に belt の定義が無い');
   ok(reg.building('inserter').inserter, 'inserter に inserter の定義が無い');
   ok(reg.building('chest').container, 'chest に container の定義が無い');
+  ok(reg.building('furnace').machine, 'furnace に machine の定義が無い');
+  ok(reg.building('miner').miner, 'miner に miner の定義が無い');
+  ok(reg.item('iron-ore').resource, '鉄鉱石が鉱脈になれない');
+  for (const id of ['miner', 'furnace', 'generator']) eq(reg.building(id).size, { width: 1, height: 1 }, `${id} が 1x1 でない`);
+  for (const r of reg.recipes.values()) eq(r.craftTime, 10, `${r.id} の加工時間が10秒でない`);
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {

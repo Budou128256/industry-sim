@@ -29,6 +29,8 @@ const $ = id => document.getElementById(id);
 
 /** 動作確認用の道具: クリックしたマスにアイテムを置く（採掘機が動くのは Phase 3 から）。 */
 const ITEM_TOOL = '__items';
+/** 鉱脈を置く道具（右クリックで消す）。 */
+const RESOURCE_TOOL = '__resource';
 const ITEM_AMOUNT = 10;
 
 async function main() {
@@ -108,6 +110,12 @@ function buildPalette() {
     + `<span class="sz">+${ITEM_AMOUNT}</span>`;
   el.onclick = () => selectBuilding(ITEM_TOOL);
   box.appendChild(el);
+  const r = document.createElement('button');
+  r.className = 'pal';
+  r.dataset.id = RESOURCE_TOOL;
+  r.innerHTML = `<i style="background:#64748b"></i><span class="n">鉱脈を置く</span><span class="sz">地面</span>`;
+  r.onclick = () => selectBuilding(RESOURCE_TOOL);
+  box.appendChild(r);
 }
 
 /* ---------- 時間 ---------- */
@@ -142,6 +150,11 @@ function selectBuilding(id) {
   for (const el of document.querySelectorAll('.pal')) {
     el.classList.toggle('sel', el.dataset.id === id);
   }
+  if (id === RESOURCE_TOOL) {
+    state.renderer.ghost = null;
+    status(`クリック・ドラッグで ${itemName($('itemSel').value)} の鉱脈を置きます（右クリックで消す）。採掘機を鉱脈の方へ向けて隣に置くと掘ります`);
+    return;
+  }
   if (id === ITEM_TOOL) {
     state.renderer.ghost = null;
     status(`クリックしたマスに ${itemName($('itemSel').value)} を ${ITEM_AMOUNT} 個置きます（保管箱なら中へ、ベルトなら上へ、それ以外は床へ）`);
@@ -154,7 +167,8 @@ function selectBuilding(id) {
 /** Input から来たコマンドをここで実行する。 */
 function onCommand(cmd) {
   const { registry, world, renderer } = state;
-  const tool = state.selected === ITEM_TOOL;
+  const tool = state.selected === ITEM_TOOL || state.selected === RESOURCE_TOOL;
+  const paint = state.selected === RESOURCE_TOOL;
   const def = state.selected && !tool ? registry.building(state.selected) : null;
 
   switch (cmd.type) {
@@ -168,6 +182,7 @@ function onCommand(cmd) {
     }
     case 'place': {
       state.dragged.clear();
+      if (paint) { setResource(cmd.x, cmd.y); break; }
       if (tool) { addItems(cmd.x, cmd.y); break; }
       if (!def) { inspect(cmd.x, cmd.y); break; }
       tryPlace(def, cmd.x, cmd.y, state.dir);
@@ -175,6 +190,11 @@ function onCommand(cmd) {
       break;
     }
     case 'drag': {
+      if (paint) {
+        for (const c of lineCells(cmd.from, cmd.to)) setResource(c.x, c.y, true);
+        draw();
+        break;
+      }
       if (!def) break;
       const dir = def.directional ? (dragDirection(cmd.from, cmd.to) || state.dir) : state.dir;
       for (const c of lineCells(cmd.from, cmd.to)) {
@@ -187,6 +207,12 @@ function onCommand(cmd) {
       break;
     }
     case 'remove': {
+      if (paint) {
+        world.setResource(cmd.x, cmd.y, null);
+        status(`(${cmd.x}, ${cmd.y}) の鉱脈を消しました`);
+        draw();
+        break;
+      }
       const removed = removeAt(world, cmd.x, cmd.y);
       status(removed ? `${registry.building(removed.type).name} を撤去` : '何もありません');
       draw();
@@ -230,6 +256,18 @@ function addItems(x, y) {
   draw();
 }
 
+function setResource(x, y, quiet = false) {
+  const { world, registry } = state;
+  if (x < 0 || y < 0 || x >= world.width || y >= world.height) return;
+  const item = $('itemSel').value;
+  if (!(registry.item(item) || {}).resource) {
+    status(`${itemName(item)} は鉱脈になりません（data/items で resource: true のものだけ）`, true);
+    return;
+  }
+  world.setResource(x, y, item);
+  if (!quiet) { status(`(${x}, ${y}) に ${itemName(item)} の鉱脈`); draw(); }
+}
+
 function itemName(id) {
   const it = state.registry.item(id);
   return it ? it.name : id;
@@ -248,7 +286,13 @@ function inspect(x, y) {
   if (c.belt && c.belt.length) parts.push(`ベルト上: ${describe(c.belt)}`);
   if (c.container) parts.push(`中身: ${describe(c.container.slots) || '空'}`
     + `（${c.container.slots.filter(Boolean).length}/${c.container.slots.length} 枠）`);
+  if (c.machine) {
+    const m = c.machine;
+    parts.push(`${m.state} / 入力: ${m.input ? describe([m.input]) : '空'} / 出力: ${m.output ? describe([m.output]) : '空'}`);
+  }
+  if (c.miner) parts.push(c.miner.state);
   if (c.ground.length) parts.push(`床: ${describe(c.ground)}`);
+  if (c.resource) parts.push(`鉱脈: ${itemName(c.resource)}`);
   const extra = parts.length ? ` — ${parts.join(' / ')}` : '';
   const b = state.world.at(x, y);
   if (!b) { status(`(${x}, ${y}) は空きマス${extra}`); return; }

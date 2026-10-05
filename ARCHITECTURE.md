@@ -30,7 +30,9 @@ my-application/
     │   ├─ sim.js        時間と中身（ベルト・箱・床）。World の変更には sync() で追いつく
     │   ├─ belt.js       ベルトの線
     │   ├─ inserter.js   アーム
-    │   └─ inventory.js  スロットとスタックの列
+    │   ├─ inventory.js  スロットとスタックの列
+    │   ├─ machine.js    加工機
+    │   └─ miner.js      採掘機（鉱脈は world.resources）
     ├─ render/
     │   └─ renderer.js   World を**読むだけ**。Canvas に描く
     ├─ input/

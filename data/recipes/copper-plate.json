@@ -1,13 +1,13 @@
 {
   "id": "copper-plate",
-  "name": "銅板",
+  "name": "銅板(テスト)",
   "inputs": {
     "copper-ore": 1
   },
   "outputs": {
     "copper-plate": 1
   },
-  "craftTime": 3.2,
+  "craftTime": 10,
   "machines": [
     "furnace"
   ]
