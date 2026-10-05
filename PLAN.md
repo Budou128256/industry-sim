@@ -13,7 +13,8 @@
 |---|---|
 | 段階 | **Phase 1 完了 → 次は Phase 2（Belt / 搬送 / Inserter）** |
 | 置き場所 | `Desktop/drive-download-20260614T075216Z-3-001/my-application/`（**git 管理下**・ブランチ main） |
-| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ **Phase 1（置く・消す・回す・連続設置）** |
+| remote | `origin` = https://github.com/Budou128256/industry-sim （**Private**）。以後は `git push` で上がる |
+| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ **Phase 1（置く・消す・回す・連続設置）** / GitHub へ push |
 | 次の作業 | Phase 2 の実装（下の「次にやること」） |
 | 動かし方 | `py -3 serve.py` → http://127.0.0.1:8080/ （テストは `/tests.html`） |
 
@@ -27,7 +28,8 @@
 | Python | 3.14.5 ✓ | シミュレータ・サーバ側は問題なし |
 | pip | 26.1.1 ✓（ネット接続可） | Django は `py -3 -m pip install django` で入る見込み |
 | Django | 未インストール | Phase 6 まで不要 |
-| git | 2.54.0 ✓ | ただし**プロジェクトは git 管理外**（履歴が無い） |
+| git | 2.54.0 ✓ | `my-application/` は git 管理下。`corekeeper_layout/` は管理外のまま |
+| gh (GitHub CLI) | 2.102.0 ✓ | winget で導入。`Budou128256` で認証済み（scopes: repo / read:org / gist） |
 
 ---
 
@@ -101,7 +103,7 @@
    - `src/core/sim.js` — Tick（入力 → 物流 → 生産 → … の順で回す骨組み）
    - 参考: `../corekeeper_layout/static/sim.js`（同じ規則が実装済み。読み替えの一次資料）
 4. テストを足す（ベルトの搬送・詰まり・分岐）
-5. この表と段階チェックを更新してコミットする
+5. この表と段階チェックを更新してコミットし、`git push` で GitHub へ上げる
 
 ## Phase 1 でできること（2026-10-05 時点）
 
