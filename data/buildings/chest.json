@@ -1,0 +1,14 @@
+{
+  "id": "chest",
+  "name": "保管箱",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#b07a46",
+  "directional": false,
+  "tags": [
+    "storage"
+  ],
+  "note": "アイテムを貯める"
+}

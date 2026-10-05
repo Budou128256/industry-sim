@@ -1,0 +1,156 @@
+/* Canvas への描画。World を**読むだけ**で、書き換えない。
+ *
+ * 画面の見た目に関する判断（色・大きさ・カメラ）はここに閉じる。
+ * 盤面を DOM 要素で作らない（建物が増えても重くならないように）。
+ */
+
+import { DELTA, footprint, rotatedSize } from '../core/grid.js';
+
+export class Renderer {
+  constructor(canvas, registry) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.registry = registry;
+    /** カメラ: 1マスの画面上の大きさと、左上がどのマスか */
+    this.tile = 28;
+    this.origin = { x: 0, y: 0 };   // マス単位
+    this.hover = null;              // { x, y }
+    this.ghost = null;              // { cells, ok, def, dir }
+  }
+
+  /** 画面の座標 → マスの座標。 */
+  toCell(px, py) {
+    const r = this.canvas.getBoundingClientRect();
+    return {
+      x: Math.floor((px - r.left) / this.tile + this.origin.x),
+      y: Math.floor((py - r.top) / this.tile + this.origin.y),
+    };
+  }
+
+  /** マスの座標 → 画面の座標（左上）。 */
+  toScreen(x, y) {
+    return { px: (x - this.origin.x) * this.tile, py: (y - this.origin.y) * this.tile };
+  }
+
+  zoomAt(px, py, factor) {
+    const before = this.toCell(px, py);
+    this.tile = Math.max(8, Math.min(64, this.tile * factor));
+    const after = this.toCell(px, py);
+    this.origin.x += before.x - after.x;
+    this.origin.y += before.y - after.y;
+  }
+
+  pan(dxCells, dyCells) {
+    this.origin.x += dxCells;
+    this.origin.y += dyCells;
+  }
+
+  resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const r = this.canvas.getBoundingClientRect();
+    this.canvas.width = Math.round(r.width * dpr);
+    this.canvas.height = Math.round(r.height * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.viewport = { width: r.width, height: r.height };
+  }
+
+  draw(world) {
+    const ctx = this.ctx;
+    const { width: vw, height: vh } = this.viewport;
+    ctx.clearRect(0, 0, vw, vh);
+
+    // 地面
+    ctx.fillStyle = '#10131a';
+    ctx.fillRect(0, 0, vw, vh);
+
+    const t = this.tile;
+    const x0 = Math.max(0, Math.floor(this.origin.x));
+    const y0 = Math.max(0, Math.floor(this.origin.y));
+    const x1 = Math.min(world.width, Math.ceil(this.origin.x + vw / t));
+    const y1 = Math.min(world.height, Math.ceil(this.origin.y + vh / t));
+
+    // 盤面の内側だけ明るくする
+    const a = this.toScreen(x0, y0), b = this.toScreen(x1, y1);
+    ctx.fillStyle = '#161a23';
+    ctx.fillRect(a.px, a.py, b.px - a.px, b.py - a.py);
+
+    // 升目
+    ctx.strokeStyle = '#242a36';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = x0; x <= x1; x++) {
+      const { px } = this.toScreen(x, 0);
+      ctx.moveTo(px + 0.5, a.py); ctx.lineTo(px + 0.5, b.py);
+    }
+    for (let y = y0; y <= y1; y++) {
+      const { py } = this.toScreen(0, y);
+      ctx.moveTo(a.px, py + 0.5); ctx.lineTo(b.px, py + 0.5);
+    }
+    ctx.stroke();
+
+    // 建物（見えている範囲だけ描く）
+    world.forEach(bld => {
+      const size = rotatedSize(bld.size, bld.dir);
+      if (bld.x + size.width < x0 || bld.x > x1 || bld.y + size.height < y0 || bld.y > y1) return;
+      this.drawBuilding(bld, size);
+    });
+
+    if (this.ghost) this.drawGhost(this.ghost);
+    if (this.hover) this.drawHover(this.hover);
+  }
+
+  drawBuilding(bld, size) {
+    const ctx = this.ctx, t = this.tile;
+    const def = this.registry.building(bld.type) || {};
+    const { px, py } = this.toScreen(bld.x, bld.y);
+    const w = size.width * t, h = size.height * t;
+
+    ctx.fillStyle = def.color || '#64748b';
+    ctx.fillRect(px + 1, py + 1, w - 2, h - 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + 1, py + 1, w - 2, h - 2);
+
+    // 向きの印
+    if (def.directional && bld.dir) {
+      const d = DELTA[bld.dir];
+      ctx.fillStyle = '#0b0e15';
+      ctx.beginPath();
+      ctx.arc(px + w / 2 + d.x * w * 0.33, py + h / 2 + d.y * h * 0.33, Math.max(2, t * 0.09), 0, 7);
+      ctx.fill();
+    }
+    // 名前の頭文字（アイコンは後の段階で）
+    if (t >= 18 && def.name) {
+      ctx.fillStyle = '#0b0e15';
+      ctx.font = `700 ${Math.round(t * 0.4)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.name[0], px + w / 2, py + h / 2 + 1);
+    }
+  }
+
+  drawGhost({ cells, ok }) {
+    const ctx = this.ctx, t = this.tile;
+    ctx.fillStyle = ok ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.3)';
+    ctx.strokeStyle = ok ? 'rgba(74,222,128,0.9)' : 'rgba(248,113,113,0.9)';
+    ctx.lineWidth = 2;
+    for (const c of cells) {
+      const { px, py } = this.toScreen(c.x, c.y);
+      ctx.fillRect(px, py, t, t);
+      ctx.strokeRect(px + 1, py + 1, t - 2, t - 2);
+    }
+  }
+
+  drawHover({ x, y }) {
+    const ctx = this.ctx, t = this.tile;
+    const { px, py } = this.toScreen(x, y);
+    ctx.strokeStyle = 'rgba(148,163,184,0.8)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 0.5, py + 0.5, t - 1, t - 1);
+  }
+
+  /** 置こうとしている場所の下見を作る（置けるかどうかで色が変わる）。 */
+  setGhost(def, x, y, dir, ok) {
+    this.ghost = def ? { cells: footprint(x, y, def.size, dir), ok, def, dir } : null;
+  }
+}

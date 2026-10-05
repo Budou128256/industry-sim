@@ -1,0 +1,14 @@
+{
+  "id": "inserter",
+  "name": "アーム",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#c2a04a",
+  "directional": true,
+  "tags": [
+    "logistics"
+  ],
+  "note": "正面から取り背面へ置く（Phase 2 で実装）"
+}

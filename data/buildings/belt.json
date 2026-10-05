@@ -1,0 +1,14 @@
+{
+  "id": "belt",
+  "name": "ベルト",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#7f8a9c",
+  "directional": true,
+  "tags": [
+    "logistics"
+  ],
+  "note": "アイテムを運ぶ（Phase 2 で実装）"
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>core のテスト</title>
+<style>
+  body{margin:0;padding:18px;font:14px/1.7 "Segoe UI","Yu Gothic UI",system-ui,sans-serif;
+       background:#0f1117;color:#e7ebf3}
+  h1{font-size:16px;margin:0 0 4px}
+  .sub{color:#93a0b4;font-size:12.5px;margin-bottom:14px}
+  #sum{font-weight:700;margin-bottom:10px}
+  .ok{color:#86efac}
+  .ng{color:#fca5a5}
+  .msg{color:#fca5a5;font-size:12.5px;margin-left:16px}
+  #out div{padding:1px 0}
+</style>
+</head>
+<body>
+<h1>core のテスト</h1>
+<div class="sub">grid / world / placement / registry — DOM も描画も使わない層だけを確かめる</div>
+<div id="sum">実行中…</div>
+<div id="out"></div>
+<script type="module" src="src/tests.js"></script>
+</body>
+</html>

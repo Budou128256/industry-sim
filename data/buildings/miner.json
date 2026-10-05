@@ -1,0 +1,14 @@
+{
+  "id": "miner",
+  "name": "採掘機",
+  "size": {
+    "width": 2,
+    "height": 2
+  },
+  "color": "#6b7f99",
+  "directional": true,
+  "tags": [
+    "production"
+  ],
+  "note": "下の資源を掘る（Phase 3 で実装）"
+}

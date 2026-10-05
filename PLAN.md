@@ -11,10 +11,11 @@
 
 | 項目 | 状態 |
 |---|---|
-| 段階 | **Phase 1（Grid / Building / Item / Placement）着手** |
+| 段階 | **Phase 1 完了 → 次は Phase 2（Belt / 搬送 / Inserter）** |
 | 置き場所 | `Desktop/drive-download-20260614T075216Z-3-001/my-application/`（**git 管理下**・ブランチ main） |
-| 済んだこと | 環境調査 / 既存コードの分類 / git init / **Phase 0 完了（決定事項の確定と ARCHITECTURE.md）** |
-| 次の作業 | Phase 1 の実装（下の「次にやること」） |
+| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ **Phase 1（置く・消す・回す・連続設置）** |
+| 次の作業 | Phase 2 の実装（下の「次にやること」） |
+| 動かし方 | `py -3 serve.py` → http://127.0.0.1:8080/ （テストは `/tests.html`） |
 
 ---
 
@@ -46,7 +47,7 @@
 ## 段階（指示書の Phase に対応）
 
 - [x] **Phase 0** 準備: git init ✓ / 責務分離の設計メモ（ARCHITECTURE.md）✓ / 決定事項の確定 ✓
-- [ ] **Phase 1** Grid / Building / Item / Placement（データ駆動の core を切り出す）
+- [x] **Phase 1** Grid / Building / Item / Placement ✓ 2026-10-05（テスト19件すべて成功）
 - [ ] **Phase 2** Belt / Item transportation / Inserter
 - [ ] **Phase 3** Recipe / Machine / Production
 - [ ] **Phase 4** Power / Fluid / Storage
@@ -93,14 +94,22 @@
 ## 次にやること（次セッションの開始手順）
 
 1. この `PLAN.md` と [ARCHITECTURE.md](ARCHITECTURE.md) を読む
-2. Phase 1 を実装する:
-   - `data/items/*.json` `data/buildings/*.json`（まずは数個）
-   - `src/core/`（registry / grid / world / placement）
-   - `src/render/renderer.js`（Canvasにグリッドと建物を描く）
-   - `src/input/input.js`（設置・撤去・回転・連続設置）
-   - `index.html` と `serve.py`（`py -3 serve.py` で開く）
-3. ブラウザで動かして確認し、簡易テスト（`src/tests.js`）を通す
-4. この表の「現在の状態」と段階チェックを更新してコミットする
+2. `py -3 serve.py` で動かし、`/tests.html` が全部成功することを確かめる（いまの状態の確認）
+3. Phase 2 を実装する（**実装前に方針を説明して合意を取る**）:
+   - `src/core/belt.js` — ベルト1本を「線」として持つ表現（DOM要素は作らない）
+   - `src/core/inserter.js` — 正面から取り背面へ置く
+   - `src/core/sim.js` — Tick（入力 → 物流 → 生産 → … の順で回す骨組み）
+   - 参考: `../corekeeper_layout/static/sim.js`（同じ規則が実装済み。読み替えの一次資料）
+4. テストを足す（ベルトの搬送・詰まり・分岐）
+5. この表と段階チェックを更新してコミットする
+
+## Phase 1 でできること（2026-10-05 時点）
+
+- 左の一覧から建物を選び、盤面に**置く・ドラッグで連続設置・右クリックで撤去・R で回転**
+- 2x2 の建物の重なり判定、盤面外の拒否、回すと入らない場所での巻き戻し
+- ホイールで拡大縮小、Shift+ドラッグで移動
+- 建物・アイテム・レシピは `data/` の JSON。**ファイルを足すだけで増える**
+- `World.toJSON()` / `fromJSON()` で保存・復元の形が用意してある（Phase 6 で使う）
 
 ## 関連
 

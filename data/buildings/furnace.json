@@ -1,0 +1,14 @@
+{
+  "id": "furnace",
+  "name": "炉",
+  "size": {
+    "width": 2,
+    "height": 2
+  },
+  "color": "#9a6b55",
+  "directional": false,
+  "tags": [
+    "production"
+  ],
+  "note": "レシピで精錬する（Phase 3 で実装）"
+}

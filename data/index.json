@@ -1,0 +1,21 @@
+{
+  "items": [
+    "iron-ore",
+    "copper-ore",
+    "coal",
+    "iron-plate",
+    "copper-plate"
+  ],
+  "buildings": [
+    "miner",
+    "furnace",
+    "belt",
+    "inserter",
+    "chest",
+    "generator"
+  ],
+  "recipes": [
+    "iron-plate",
+    "copper-plate"
+  ]
+}
