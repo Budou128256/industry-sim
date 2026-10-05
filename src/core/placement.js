@@ -14,7 +14,7 @@ export function canPlace(world, def, x, y, dir = 'N') {
     if (!inBounds(c.x, c.y, world.width, world.height)) {
       return { ok: false, reason: '盤面の外です', cells };
     }
-    if (world.at(c.x, c.y)) {
+    if (def.layer === 'floor' ? world.floorAt(c.x, c.y) : world.at(c.x, c.y)) {
       return { ok: false, reason: 'すでに何か置いてあります', cells };
     }
   }
@@ -25,12 +25,12 @@ export function canPlace(world, def, x, y, dir = 'N') {
 export function place(world, def, x, y, dir = 'N') {
   const check = canPlace(world, def, x, y, dir);
   if (!check.ok) return null;
-  return world.add({ type: def.id, x, y, dir, size: def.size });
+  return world.add({ type: def.id, x, y, dir, size: def.size, layer: def.layer || 'object' });
 }
 
-/** そのマスの建物を取り除く。取り除いた建物を返す。 */
+/** そのマスの建物を取り除く。設置物を先に、無ければ床の層（電線など）。取り除いた建物を返す。 */
 export function removeAt(world, x, y) {
-  return world.remove(world.at(x, y));
+  return world.remove(world.at(x, y) || world.floorAt(x, y));
 }
 
 /** そのマスの建物を回す。向きを持たない建物は何もしない。 */
@@ -43,7 +43,7 @@ export function rotateAt(world, registry, x, y) {
   world.remove(b);
   const placed = place(world, def, b.x, b.y, dir);
   if (!placed) {                       // 回すと入らない（長方形の建物）なら元に戻す
-    world.add({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size });
+    world.add({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer });
     return null;
   }
   return placed;

@@ -14,5 +14,9 @@
   "inserter": {
     "periodSeconds": 1,
     "amount": "stack"
+  },
+  "power": {
+    "needs": true,
+    "conducts": true
   }
 }

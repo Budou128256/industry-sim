@@ -12,7 +12,8 @@
     "belt",
     "inserter",
     "chest",
-    "generator"
+    "generator",
+    "wire"
   ],
   "recipes": [
     "iron-plate",

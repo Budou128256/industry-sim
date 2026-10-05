@@ -21,6 +21,7 @@ import { buildBeltLines, stepBelts } from './belt.js';
 import { inserterDef, stepInserters } from './inserter.js';
 import { machinePut, makeMachine, stepMachines } from './machine.js';
 import { makeMiner, stepMiners } from './miner.js';
+import { computePower, isPowered } from './power.js';
 import { containerAdd, containerTotal, makeContainer, pileMerge, pilePush, pileTotal, stackLimit } from './inventory.js';
 
 export const TICK_HZ = 20;
@@ -38,6 +39,8 @@ export class Sim {
     this.produced = {};        // 作った数の累計（item -> 個数）
     this.ground = new Map();
     this.beltLines = [];
+    this.power = new Map();      // "x,y" -> 電力の強さ（World が変わったときに求め直す）
+    this.unpowered = new Set();  // 電気が要るのに届いていない建物の id
     this.inserters = [];
     this.events = [];          // このtickにアームが動かしたもの
     this.busy = new Set();     // このtickに動いたアームの id
@@ -104,6 +107,9 @@ export class Sim {
     this.known = new Map();
     world.forEach(b => this.known.set(b.id, { type: b.type, x: b.x, y: b.y }));
     this.beltLines = buildBeltLines(world, this.registry);
+    this.power = computePower(world, this.registry);
+    this.unpowered = new Set();
+    world.forEach(b => { if (!isPowered(this.power, this.registry, b)) this.unpowered.add(b.id); });
     const ins = [];
     world.forEach(b => { if (inserterDef(this.registry, b)) ins.push(b); });
     this.inserters = ins.sort((a, b) => (a.y - b.y) || (a.x - b.x));

@@ -1,0 +1,18 @@
+{
+  "id": "wire",
+  "name": "電線(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#facc15",
+  "directional": false,
+  "layer": "floor",
+  "tags": [
+    "power"
+  ],
+  "note": "電気を通す。床の層なので機械と同じマスに置ける",
+  "power": {
+    "conducts": true
+  }
+}

@@ -11,11 +11,11 @@
 
 | 項目 | 状態 |
 |---|---|
-| 段階 | **Phase 3 完了 → 次は Phase 4（Power / Fluid / Storage）** |
+| 段階 | **Phase 4（電力）完了 → 次は Phase 5（Chunk / 最適化 / Web Worker）** |
 | 置き場所 | `Desktop/drive-download-20260614T075216Z-3-001/my-application/`（**git 管理下**・ブランチ main） |
 | remote | `origin` = https://github.com/Budou128256/industry-sim （**Private**）。以後は `git push` で上がる |
-| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ Phase 1（置く・消す・回す・連続設置）/ GitHub へ push / Phase 2（ベルト・アーム・床・時間）/ **Phase 3（鉱脈・採掘機・炉）** |
-| 次の作業 | Phase 4 の実装（下の「次にやること」） |
+| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ Phase 1（置く・消す・回す・連続設置）/ GitHub へ push / Phase 2（ベルト・アーム・床・時間）/ Phase 3（鉱脈・採掘機・炉）/ **Phase 4（電力。液体・保管は未定）** |
+| 次の作業 | Phase 5 の実装（下の「次にやること」） |
 | 動かし方 | `py -3 serve.py` → http://127.0.0.1:8080/ （テストは `/tests.html`） |
 
 ---
@@ -51,7 +51,7 @@
 - [x] **Phase 1** Grid / Building / Item / Placement ✓ 2026-10-05（テスト19件すべて成功）
 - [x] **Phase 2** Belt / Item transportation / Inserter ✓ 2026-10-05（テスト38件すべて成功）
 - [x] **Phase 3** Recipe / Machine / Production ✓ 2026-10-05（テスト52件すべて成功）
-- [ ] **Phase 4** Power / Fluid / Storage
+- [x] **Phase 4** Power ✓ 2026-10-05（テスト58件すべて成功）。**Fluid / Storage は未定**（ユーザーが「電力だけ」を選択）
 - [ ] **Phase 5** Chunk / 最適化 / Web Worker
 - [ ] **Phase 6** Save・Load / User / API
 - [ ] **Phase 7** Advanced logistics / Research / AI / Multiplayer
@@ -96,12 +96,11 @@
 
 1. この `PLAN.md` と [ARCHITECTURE.md](ARCHITECTURE.md) を読む
 2. `py -3 serve.py` で動かし、`/tests.html` が全部成功することを確かめる（いまの状態の確認）
-3. Phase 4 を実装する（**実装前に方針を説明して合意を取る**）:
-   - 電力: 発電機から導体をたどって届く範囲（`../corekeeper_layout/static/sim.js` の `computePower`）。
-     採掘機・炉・アームに「電力が要る」を data で持たせ、届かなければ止める
-   - 液体・保管の範囲は指示書を確認してから決める
-4. テストを足す（給電範囲・電力なしで止まる）
-5. この表と段階チェックを更新してコミットし、`git push` で GitHub へ上げる
+3. Phase 5 を実装する（**実装前に方針を説明して合意を取る**）:
+   - World を Chunk に分ける / シミュレータを Web Worker へ移す
+   - core が DOM を触っていないことを先に確かめる（ARCHITECTURE.md の約束1）
+4. Phase 4 で後回しにした液体・保管の拡張は**未定**。やるかどうかをユーザーに聞いてから
+5. テストを足し、この表と段階チェックを更新してコミットし、`git push` で GitHub へ上げる
 
 ## Phase 2 で決めたこと・やったこと（2026-10-05）
 
@@ -117,6 +116,18 @@
 | 動作確認 | 「アイテムを置く」でマスに10個置ける（採掘機が動くまでの仮の道具） |
 | 入れていないもの | スプリッター（分岐）、アームのフィルタ、回収機、電力、回路、ドリル |
 
+## Phase 4 で決めたこと・やったこと（2026-10-05）
+
+| 項目 | 内容 |
+|---|---|
+| 範囲 | **電力だけ**（ユーザーが選択）。液体・保管の拡張は**未定** |
+| 規則 | sim.js の `computePower` と同じ考え方（`src/core/power.js`）。発電機（`power.source` = 24）から、電気を通すマス（`power.conducts`）を上下左右にたどり、1マスごとに強さが1下がる。隣のマスが 24、24マス先が 1 |
+| 電線 | 新しい建物 `wire`（電線(テスト)）。**床の層**（`layer: "floor"`）に置くので、機械やベルトと同じマスに置ける。撤去は上の建物が先 |
+| 電気が要るもの | 採掘機・アーム（`power.needs`）。どちらも電気を通す（隣へ渡せる）。届かなければ止まり、状態は「電力なし」、画面では右上に赤い × |
+| 電気が要らないもの | 炉・ベルト・保管箱。**Core Keeper で炉やベルトが電気を使うかは未確認**（必要なら data の `power` を足すだけで変えられる） |
+| 画面 | 「電力表示」で届いている範囲を黄色く塗る。何も選ばずにクリックで、そのマスの強さを表示 |
+| 入れていないもの | 発電機の燃料・発電量と消費量の釣り合い、電力の保存（毎回 World から求め直す） |
+
 ## Phase 3 で決めたこと・やったこと（2026-10-05）
 
 | 項目 | 内容 |
@@ -128,7 +139,7 @@
 | 鉱脈 | ユーザーが選択。World の地面の層（`world.resources`）。「鉱脈を置く」で置き、右クリックで消す。`data/items` で `resource: true` のものだけ。**掘っても減らない** |
 | 採掘機 | **正面のマスの鉱脈**から `miner.periodSeconds`（2秒）ごとに1個掘り、**背面（向きの逆）**へ出す（どちらもユーザーの指摘・選択）。ベルトなら上へ、それ以外は床へ。画面では掘るマスが水色、出し先が黄色の点線 |
 | 時間の順 | 加工機 → ベルト → 採掘機 → アーム（採掘機はベルトの後。出した物が同じ tick に進まないように） |
-| 電力 | まだ無い。全部電力なしで動く（Phase 4） |
+| 電力 | Phase 4 で追加（下の表） |
 | 入れていないもの | 燃料、複数材料のレシピ、鉱脈の残量、採掘機の進み具合の保存 |
 
 ## Phase 1 でできること（2026-10-05 時点）

@@ -7,7 +7,7 @@
  *   - アームが取るのは出力だけ
  *   - 1回の加工にレシピの craftTime 秒。材料を inputs の数だけ使い、outputs を出す
  *   - 出力が違う種類で埋まっている、または上限を超えるなら止まる
- *   - 電力は Phase 4。今は電力なしで動く
+ *   - data の power.needs があれば、電気が届いていないと止まる
  *
  * 扱えるレシピは、data/recipes の machines にその建物の id が入っているもの。
  * いまは**材料1種類・製品1種類**のレシピだけを扱う（入力が1スタックのため）。
@@ -15,7 +15,7 @@
 
 import { stackLimit } from './inventory.js';
 
-export const STATE = { WORKING: '稼働中', WAITING: '原料待ち', FULL: '出力が満杯' };
+export const STATE = { WORKING: '稼働中', WAITING: '原料待ち', FULL: '出力が満杯', NO_POWER: '電力なし' };
 
 export function machineDef(registry, building) {
   const def = building && registry.building(building.type);
@@ -72,6 +72,7 @@ export function stepMachines(sim) {
   for (const [id, m] of sim.machines) {
     const b = sim.world.buildings.get(id);
     if (!b) continue;
+    if (sim.unpowered.has(id)) { m.state = STATE.NO_POWER; continue; }
     const recipe = m.input && recipeFor(registry, b.type, m.input.item);
     const need = recipe ? Object.values(recipe.inputs)[0] : 0;
     if (!recipe || m.input.count < need) { m.state = STATE.WAITING; m.progress = 0; continue; }
