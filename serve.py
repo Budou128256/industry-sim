@@ -5,7 +5,6 @@
 
 ES モジュール（import / export）は file:// では動かないので、HTTP で配る必要がある。
 標準ライブラリだけ。追加インストールは要らない。
-Phase 6 で Django を入れるときは、この役割がそちらへ移る。
 """
 import sys
 from functools import partial
