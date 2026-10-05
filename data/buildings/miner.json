@@ -14,5 +14,9 @@
   "miner": {
     "periodSeconds": 2,
     "amount": 1
+  },
+  "power": {
+    "needs": true,
+    "conducts": true
   }
 }

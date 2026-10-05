@@ -17,8 +17,10 @@ export class World {
     this.height = height;
     /** @type {Map<number, object>} id -> building */
     this.buildings = new Map();
-    /** @type {Map<string, number>} "x,y" -> building id */
+    /** @type {Map<string, number>} "x,y" -> building id（設置物の層） */
     this.occupancy = new Map();
+    /** @type {Map<string, number>} "x,y" -> building id（床の層。電線など。設置物と同じマスに置ける） */
+    this.floor = new Map();
     /** @type {Map<string, string>} "x,y" -> 鉱脈のアイテム id（地面の層。建物とは重ねて置ける） */
     this.resources = new Map();
     /** 変更のたびに増える。描画側が「描き直すべきか」を判断するのに使う。 */
@@ -31,11 +33,21 @@ export class World {
     return id === undefined ? null : this.buildings.get(id);
   }
 
-  /** 建物を1つ置く。重なりの判定は placement.js が先に行う前提。 */
-  add({ type, x, y, dir = 'N', size }) {
-    const b = { id: nextId++, type, x, y, dir, size };
+  /** そのマスの床の層の建物（電線など）。無ければ null。 */
+  floorAt(x, y) {
+    const id = this.floor.get(key(x, y));
+    return id === undefined ? null : this.buildings.get(id);
+  }
+
+  /** 層ごとの占有表。 */
+  layerMap(layer) { return layer === 'floor' ? this.floor : this.occupancy; }
+
+  /** 建物を1つ置く。重なりの判定は placement.js が先に行う前提。layer は 'object'（既定）か 'floor'。 */
+  add({ type, x, y, dir = 'N', size, layer = 'object' }) {
+    const b = { id: nextId++, type, x, y, dir, size, layer };
     this.buildings.set(b.id, b);
-    for (const c of footprint(x, y, size, dir)) this.occupancy.set(key(c.x, c.y), b.id);
+    const occ = this.layerMap(layer);
+    for (const c of footprint(x, y, size, dir)) occ.set(key(c.x, c.y), b.id);
     this.revision++;
     return b;
   }
@@ -43,8 +55,9 @@ export class World {
   /** 建物を取り除く。取り除いた建物を返す（無ければ null）。 */
   remove(building) {
     if (!building || !this.buildings.has(building.id)) return null;
+    const occ = this.layerMap(building.layer);
     for (const c of footprint(building.x, building.y, building.size, building.dir)) {
-      if (this.occupancy.get(key(c.x, c.y)) === building.id) this.occupancy.delete(key(c.x, c.y));
+      if (occ.get(key(c.x, c.y)) === building.id) occ.delete(key(c.x, c.y));
     }
     this.buildings.delete(building.id);
     this.revision++;
@@ -91,7 +104,7 @@ export class World {
     for (const b of data.buildings || []) {
       const def = registry.building(b.type);
       if (!def) continue;                 // 知らない建物は黙って飛ばす（データが増減しても壊れない）
-      w.add({ type: b.type, x: b.x, y: b.y, dir: b.dir || 'N', size: def.size });
+      w.add({ type: b.type, x: b.x, y: b.y, dir: b.dir || 'N', size: def.size, layer: def.layer || 'object' });
     }
     for (const r of data.resources || []) w.setResource(r.x, r.y, r.item);
     return w;

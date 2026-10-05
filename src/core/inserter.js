@@ -9,6 +9,7 @@
  *     「置けないから拾わない」ではなく、拾って溢れさせる
  *   - 置き先がベルトなら、その上に載る（何スタックでも載る）
  *   - 置き先が盤面の外なら動かない
+ *   - data の power.needs があれば、電気が届いていないと動かない
  */
 
 import { DELTA, OPPOSITE, inBounds } from './grid.js';
@@ -89,6 +90,7 @@ function deliverTo(sim, cell, item, count) {
 export function stepInserters(sim) {
   for (const b of sim.inserters) {
     const def = inserterDef(sim.registry, b);
+    if (sim.unpowered.has(b.id)) continue;            // 電気が届いていない
     if (sim.tick % inserterPeriod(def, sim.tickHz) !== 0) continue;
     const { from, to } = inserterCells(b);
     const { width, height } = sim.world;

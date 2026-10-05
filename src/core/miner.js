@@ -8,13 +8,13 @@
  *   - 出し先は**背面**（向きの逆）のマス。ユーザーの指摘（Core Keeper の挙動）に合わせた。
  *     ベルトならその上へ、それ以外は**そのマスの床に落ちる**（ベルトの行き止まりと同じ）
  *   - 出し先が盤面の外なら止まる
- *   - 電力は Phase 4。今は電力なしで動く
+ *   - data の power.needs があれば、電気が届いていないと止まる（進み具合は保つ）
  */
 
 import { DELTA, footprint, inBounds, key, rotatedSize } from './grid.js';
 import { pileMerge, pilePush } from './inventory.js';
 
-export const MINER_STATE = { WORKING: '採掘中', NO_RESOURCE: '鉱脈なし', BLOCKED: '出し先が盤面の外' };
+export const MINER_STATE = { WORKING: '採掘中', NO_RESOURCE: '鉱脈なし', BLOCKED: '出し先が盤面の外', NO_POWER: '電力なし' };
 
 export function minerDef(registry, building) {
   const def = building && registry.building(building.type);
@@ -57,6 +57,7 @@ export function stepMiners(sim) {
     const b = world.buildings.get(id);
     const def = minerDef(registry, b);
     if (!def) continue;
+    if (sim.unpowered.has(id)) { m.state = MINER_STATE.NO_POWER; continue; }
     const deposits = minerDeposits(world, b);
     if (!deposits.length) { m.state = MINER_STATE.NO_RESOURCE; m.progress = 0; continue; }
     const out = minerOutput(b);

@@ -147,6 +147,12 @@ const simDefs = {
   chest: { id: 'chest', size: SIZE_1, directional: false, container: { slots: 2 } },
   furnace: defFurnace,
   smelter: { id: 'smelter', size: SIZE_2, directional: false, machine: {} },
+  gen: { id: 'gen', size: SIZE_1, directional: false, power: { source: 3 } },
+  wire: { id: 'wire', size: SIZE_1, directional: false, layer: 'floor', power: { conducts: true } },
+  pArm: { id: 'pArm', size: SIZE_1, directional: true, inserter: { periodSeconds: 1, amount: 'stack' },
+          power: { needs: true, conducts: true } },
+  pMiner: { id: 'pMiner', size: SIZE_1, directional: true, miner: { periodSeconds: 2, amount: 1 },
+            power: { needs: true, conducts: true } },
   miner: { id: 'miner', size: SIZE_1, directional: true, miner: { periodSeconds: 2, amount: 1 } },
 };
 const simReg = {
@@ -495,6 +501,64 @@ test('鉱脈 → 採掘機 → ベルト → 床 → アーム → 炉 → ア�
   eq(sim.totals().produced.ore, 15);
 });
 
+/* ---- 電力（Phase 4） ---- */
+test('電線は機械と同じマスに置けるが、電線どうしは重ねられない', () => {
+  const w = simWorld();
+  ok(put(w, 'chest', 1, 0), '箱が置けない');
+  ok(put(w, 'wire', 1, 0), '箱の下に電線が置けない');
+  eq(put(w, 'wire', 1, 0), null, '電線が重なった');
+  eq(w.at(1, 0).type, 'chest'); eq(w.floorAt(1, 0).type, 'wire');
+  removeAt(w, 1, 0);
+  eq(w.at(1, 0), null, '右クリックで先に設置物が消えていない');
+  ok(w.floorAt(1, 0), '電線まで消えた');
+  removeAt(w, 1, 0);
+  eq(w.floorAt(1, 0), null);
+});
+test('電気は電線をたどって1マスごとに弱まる', () => {
+  const w = simWorld(10, 3);
+  put(w, 'gen', 0, 0);                            // 強さ 3 → 隣 3, 2, 1
+  for (let x = 1; x <= 5; x++) put(w, 'wire', x, 0);
+  const sim = new Sim(w, simReg);
+  eq([1, 2, 3, 4].map(x => sim.power.get(`${x},0`) || 0), [3, 2, 1, 0]);
+});
+test('電気が届かないアームは動かない', () => {
+  const w = simWorld(10, 3);
+  put(w, 'chest', 0, 0); put(w, 'pArm', 1, 0, 'W'); put(w, 'chest', 2, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 5);
+  run(sim, 2);
+  eq(total(sim.contentsAt(2, 0).container.slots.filter(Boolean)), 0, '電気なしで動いた');
+  ok(sim.unpowered.has(w.at(1, 0).id), '電気なしの印が付いていない');
+  put(w, 'gen', 1, 1);                            // アームの下隣に発電機
+  run(sim, 1);
+  eq(total(sim.contentsAt(2, 0).container.slots.filter(Boolean)), 5);
+});
+test('電線の先の採掘機は動き、電線を外すと止まる', () => {
+  const w = simWorld(10, 3);
+  put(w, 'gen', 0, 1); put(w, 'wire', 1, 1); put(w, 'wire', 2, 1);
+  w.setResource(3, 0, 'ore');
+  put(w, 'pMiner', 3, 1, 'N');                    // 正面 (3,0)、背面 (3,2)
+  const sim = new Sim(w, simReg);
+  run(sim, 2);
+  eq(total(sim.contentsAt(3, 2).ground), 1, '届いているのに掘らない');
+  removeAt(w, 2, 1);
+  run(sim, 4);
+  eq(total(sim.contentsAt(3, 2).ground), 1, '電線を外しても掘った');
+  eq(sim.contentsAt(3, 1).miner.state, '電力なし');
+});
+test('電気を使う機械も電気を通す', () => {
+  const w = simWorld(10, 3);
+  put(w, 'gen', 0, 0); put(w, 'pArm', 1, 0, 'S'); put(w, 'pArm', 2, 0, 'S');
+  const sim = new Sim(w, simReg);
+  eq(sim.unpowered.size, 0);
+});
+test('電線は保存して読み戻せる', () => {
+  const w = simWorld();
+  put(w, 'chest', 1, 0); put(w, 'wire', 1, 0);
+  const back = World.fromJSON(JSON.parse(JSON.stringify(w)), simReg);
+  eq(back.at(1, 0).type, 'chest'); eq(back.floorAt(1, 0).type, 'wire');
+});
+
 /* ---- registry（データを実際に読む） ---- */
 const reg = await Registry.load('data');
 test('data/ を読める', () => {
@@ -514,6 +578,10 @@ test('ベルト・アーム・保管箱の挙動が data に書いてある', ()
   ok(reg.item('iron-ore').resource, '鉄鉱石が鉱脈になれない');
   for (const id of ['miner', 'furnace', 'generator']) eq(reg.building(id).size, { width: 1, height: 1 }, `${id} が 1x1 でない`);
   for (const r of reg.recipes.values()) eq(r.craftTime, 10, `${r.id} の加工時間が10秒でない`);
+  eq(reg.building('generator').power.source, 24);
+  ok(reg.building('wire') && reg.building('wire').layer === 'floor', '電線が床の層にない');
+  ok(reg.building('inserter').power.needs && reg.building('miner').power.needs, 'アーム・採掘機が電気を要らない');
+  ok(!reg.building('belt').power && !reg.building('furnace').power, 'ベルト・炉が電気を要る');
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {

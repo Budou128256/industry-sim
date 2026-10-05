@@ -25,14 +25,15 @@ my-application/
     ├─ core/             ★ ゲームの状態と規則。描画もDOMも知らない
     │   ├─ registry.js   データの読み込みと id 引き
     │   ├─ grid.js       座標・近傍・範囲（後で Chunk に拡張する）
-    │   ├─ world.js      World（grid + buildings）。状態の持ち主
+    │   ├─ world.js      World（grid + buildings）。状態の持ち主。物の層と床の層（電線）を持つ
     │   ├─ placement.js  置ける/置けないの判定、設置・撤去・回転
     │   ├─ sim.js        時間と中身（ベルト・箱・床）。World の変更には sync() で追いつく
     │   ├─ belt.js       ベルトの線
     │   ├─ inserter.js   アーム
     │   ├─ inventory.js  スロットとスタックの列
     │   ├─ machine.js    加工機
-    │   └─ miner.js      採掘機（鉱脈は world.resources）
+    │   ├─ miner.js      採掘機（鉱脈は world.resources）
+    │   └─ power.js      電力網（電線は world の床の層）
     ├─ render/
     │   └─ renderer.js   World を**読むだけ**。Canvas に描く
     ├─ input/
@@ -72,7 +73,7 @@ my-application/
 | 1 | Grid / Building / Item / Placement | 盤面に建物を置ける・消せる・回せる。中身は data/ の JSON |
 | 2 | Belt / Inserter / アイテム搬送 | 置いたベルトの上をアイテムが流れる |
 | 3 | Recipe / Machine / Production | 機械が材料を食べて製品を出す |
-| 4 | Power / Fluid / Storage | 電力網・液体・保管 |
+| 4 | Power（Fluid / Storage は未定） | 発電機から電線で電気が届き、届かない機械は止まる |
 | 5 | Chunk / 最適化 / Web Worker | 大きなマップでも重くならない |
 | 6 | 保存・読込 / API | ワールドと設計図をサーバに保存 |
 | 7 | 高度な物流 / 研究 / AI | — |

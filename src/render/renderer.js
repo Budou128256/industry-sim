@@ -19,6 +19,7 @@ export class Renderer {
     this.origin = { x: 0, y: 0 };   // マス単位
     this.hover = null;              // { x, y }
     this.ghost = null;              // { cells, ok, def, dir }
+    this.showPower = true;          // 電気の届く範囲を塗るか
   }
 
   /** 画面の座標 → マスの座標。 */
@@ -100,16 +101,56 @@ export class Renderer {
     }
 
     // 建物（見えている範囲だけ描く）
-    world.forEach(bld => {
+    // 電気の届いているマス（薄い黄色。強いほど濃い）
+    if (sim && this.showPower) {
+      ctx.fillStyle = '#facc15';
+      for (const [k, lv] of sim.power) {
+        const [x, y] = k.split(',').map(Number);
+        if (lv < 1 || x < x0 - 1 || x > x1 || y < y0 - 1 || y > y1) continue;
+        const { px, py } = this.toScreen(x, y);
+        ctx.globalAlpha = 0.06 + 0.12 * Math.min(1, lv / 24);
+        ctx.fillRect(px, py, t, t);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // 床の層（電線）を先に、その上に設置物
+    const visible = bld => {
       const size = rotatedSize(bld.size, bld.dir);
-      if (bld.x + size.width < x0 || bld.x > x1 || bld.y + size.height < y0 || bld.y > y1) return;
-      this.drawBuilding(bld, size, sim);
+      return !(bld.x + size.width < x0 || bld.x > x1 || bld.y + size.height < y0 || bld.y > y1);
+    };
+    world.forEach(bld => { if (bld.layer === 'floor' && visible(bld)) this.drawWire(world, bld); });
+    world.forEach(bld => {
+      if (bld.layer === 'floor' || !visible(bld)) return;
+      this.drawBuilding(bld, rotatedSize(bld.size, bld.dir), sim);
     });
 
     if (sim) this.drawItems(world, sim, { x0, y0, x1, y1 });
 
     if (this.ghost) this.drawGhost(this.ghost);
     if (this.hover) this.drawHover(this.hover);
+  }
+
+  /** 電線: 隣の電線へ向かって線を引く。 */
+  drawWire(world, bld) {
+    const ctx = this.ctx, t = this.tile;
+    const { px, py } = this.toScreen(bld.x, bld.y);
+    const cx = px + t / 2, cy = py + t / 2;
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = Math.max(2, t * 0.1);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    let any = false;
+    for (const d of ['N', 'E', 'S', 'W']) {
+      const n = world.floorAt(bld.x + DELTA[d].x, bld.y + DELTA[d].y);
+      if (!n || n.type !== bld.type) continue;
+      any = true;
+      ctx.moveTo(cx, cy); ctx.lineTo(cx + DELTA[d].x * t / 2, cy + DELTA[d].y * t / 2);
+    }
+    if (!any) { ctx.moveTo(cx - t * 0.25, cy); ctx.lineTo(cx + t * 0.25, cy); }
+    ctx.stroke();
+    ctx.fillStyle = '#fde047';
+    ctx.beginPath(); ctx.arc(cx, cy, t * 0.1, 0, 7); ctx.fill();
   }
 
   drawBuilding(bld, size, sim) {
@@ -140,6 +181,16 @@ export class Renderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(def.name[0], px + w / 2, py + h / 2 + 1);
+    }
+    // 電気が要るのに届いていない: 右上に赤い ×
+    if (sim && sim.unpowered.has(bld.id)) {
+      ctx.strokeStyle = '#f87171';
+      ctx.lineWidth = Math.max(2, t * 0.07);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(px + w - t * 0.3, py + t * 0.1); ctx.lineTo(px + w - t * 0.1, py + t * 0.3);
+      ctx.moveTo(px + w - t * 0.1, py + t * 0.1); ctx.lineTo(px + w - t * 0.3, py + t * 0.3);
+      ctx.stroke();
     }
   }
 
