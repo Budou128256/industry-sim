@@ -10,7 +10,7 @@
 
 import { World } from '../core/world.js';
 import { Sim, TICK_HZ } from '../core/sim.js';
-import { canPlace, place, removeAt, rotateAt } from '../core/placement.js';
+import { PathPlacer, canPlace, place, removeAt, rotateAt } from '../core/placement.js';
 import { makeSnapshot } from '../core/snapshot.js';
 import { key } from '../core/grid.js';
 
@@ -82,6 +82,22 @@ export class Engine {
     return { placed, reason, last };
   }
 
+  /** ドラッグで置き始める（押したマス）。続きは dragTo。 */
+  op_dragStart({ type, x, y, dir }) {
+    this.drag = new PathPlacer(this.world, this.registry, this.registry.building(type), dir);
+    const r = this.drag.start(x, y);
+    this.changed();
+    return r;
+  }
+
+  /** ドラッグの続き。cells: 前のマスから上下左右に隣り合う順のマス */
+  op_dragTo({ cells }) {
+    if (!this.drag) return { placed: 0, reason: null, last: null };
+    const r = this.drag.extend(cells);
+    this.changed();
+    return r;
+  }
+
   op_remove({ x, y }) {
     const b = removeAt(this.world, x, y);
     if (b) this.changed();
@@ -115,6 +131,7 @@ export class Engine {
 
   op_clear() {
     this.op_pause();
+    this.drag = null;
     this.reset();
     this.changed();
   }

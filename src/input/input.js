@@ -7,7 +7,7 @@
  *   { type:'place',  x, y, dir }      置く
  *   { type:'remove', x, y }           撤去
  *   { type:'rotate', x, y }           回す
- *   { type:'drag',   from, to }       連続設置（線）
+ *   { type:'drag',   from, to }       連続設置（前のマス → 今のマス。マウスの通った道どおりに置く）
  *   { type:'inspect', x, y }          中身を見る
  */
 
@@ -33,7 +33,7 @@ export class Input {
         return;
       }
       if (e.button === 2) { this.emit({ type: 'remove', ...cell }); return; }
-      if (e.button === 0) { this.dragStart = cell; this.emit({ type: 'place', ...cell }); }
+      if (e.button === 0) { this.dragStart = cell; this.dragLast = cell; this.emit({ type: 'place', ...cell }); }
     });
 
     cv.addEventListener('mousemove', e => {
@@ -48,7 +48,10 @@ export class Input {
         return;
       }
       if (this.dragStart) {
-        this.emit({ type: 'drag', from: this.dragStart, to: cell });
+        const last = this.dragLast;
+        if (last.x === cell.x && last.y === cell.y) return;    // 同じマスの中で動いただけ
+        this.dragLast = cell;
+        this.emit({ type: 'drag', from: last, to: cell });
       } else {
         this.emit({ type: 'hover', ...cell });
       }

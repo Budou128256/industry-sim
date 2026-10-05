@@ -7,7 +7,7 @@
 import { CHUNK, DELTA, footprint, key, neighbors, parseKey, rotateCW, rotatedSize } from './core/grid.js';
 import { ChunkLayer } from './core/chunks.js';
 import { World } from './core/world.js';
-import { canPlace, dragDirection, lineCells, place, removeAt, rotateAt } from './core/placement.js';
+import { PathPlacer, canPlace, pathCells, place, removeAt, rotateAt } from './core/placement.js';
 import { Registry } from './core/registry.js';
 import { Sim, TICK_HZ } from './core/sim.js';
 import { buildBeltLines } from './core/belt.js';
@@ -131,15 +131,46 @@ test('回すと入らない場所では元に戻す', () => {
   eq(w.at(0, 0).dir, 'N', '元の向きに戻っていない');
   eq(w.count, 2);
 });
-test('ドラッグは直線になる（斜めにしない）', () => {
-  eq(lineCells({ x: 0, y: 0 }, { x: 3, y: 1 }).length, 4);
-  eq(lineCells({ x: 0, y: 0 }, { x: 3, y: 1 })[3], { x: 3, y: 0 });
-  eq(lineCells({ x: 2, y: 2 }, { x: 2, y: 2 }), [{ x: 2, y: 2 }]);
+test('マウスの道は上下左右だけでつながる（飛んだマスも埋める）', () => {
+  eq(pathCells({ x: 0, y: 0 }, { x: 3, y: 0 }), [{ x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }]);
+  eq(pathCells({ x: 0, y: 0 }, { x: 1, y: 1 }), [{ x: 1, y: 0 }, { x: 1, y: 1 }]);
+  eq(pathCells({ x: 2, y: 2 }, { x: 2, y: 2 }), []);
+  const p = pathCells({ x: 0, y: 0 }, { x: -3, y: 5 });
+  eq(p[p.length - 1], { x: -3, y: 5 });
+  let prev = { x: 0, y: 0 };
+  for (const c of p) { eq(Math.abs(c.x - prev.x) + Math.abs(c.y - prev.y), 1, '隣り合っていない'); prev = c; }
 });
-test('ドラッグの向きが取れる', () => {
-  eq(dragDirection({ x: 0, y: 0 }, { x: 5, y: 1 }), 'E');
-  eq(dragDirection({ x: 0, y: 0 }, { x: 0, y: -3 }), 'N');
-  eq(dragDirection({ x: 1, y: 1 }, { x: 1, y: 1 }), null);
+const defBox = { id: 'box', name: '箱', size: SIZE_1, directional: false };
+const pathReg = { building: id => ({ belt: defBelt, box: defBox }[id]) };
+test('ドラッグは通った道どおりに置き、ベルトは曲がり角で進む向きに回る', () => {
+  const w = new World({ width: 10, height: 10 });
+  const pp = new PathPlacer(w, pathReg, defBelt, 'N');
+  pp.start(1, 1);
+  pp.extend(pathCells({ x: 1, y: 1 }, { x: 3, y: 1 }));   // 右へ
+  pp.extend(pathCells({ x: 3, y: 1 }, { x: 3, y: 3 }));   // 下へ曲がる
+  const dirs = [[1, 1], [2, 1], [3, 1], [3, 2], [3, 3]].map(([x, y]) => w.at(x, y) && w.at(x, y).dir);
+  eq(dirs, ['E', 'E', 'S', 'S', 'S']);
+  eq(w.count, 5);
+});
+test('ドラッグは前からある建物を上書きも回しもしない・戻っても回さない', () => {
+  const w = new World({ width: 10, height: 10 });
+  const old = place(w, defBelt, 3, 1, 'N');
+  const pp = new PathPlacer(w, pathReg, defBelt, 'N');
+  pp.start(1, 1);
+  const r = pp.extend(pathCells({ x: 1, y: 1 }, { x: 4, y: 1 }));
+  eq([r.placed, r.reason], [2, 'すでに何か置いてあります']);
+  eq(w.at(3, 1).id, old.id);
+  eq(w.at(3, 1).dir, 'N', '前からあったベルトが回った');
+  eq(w.at(4, 1).dir, 'E');
+  pp.extend([{ x: 3, y: 1 }]);                            // 左へ戻る
+  eq(w.at(4, 1).dir, 'E', '戻っただけで回った');
+});
+test('向きのない建物は道どおりに並ぶだけ', () => {
+  const w = new World({ width: 10, height: 10 });
+  const pp = new PathPlacer(w, pathReg, defBox, 'N');
+  pp.start(0, 0);
+  pp.extend(pathCells({ x: 0, y: 0 }, { x: 2, y: 2 }));
+  eq(w.count, 5);
 });
 
 /* ---- sim（Phase 2: ベルト / アーム / 床） ---- */
