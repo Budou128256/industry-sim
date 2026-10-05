@@ -11,11 +11,11 @@
 
 | 項目 | 状態 |
 |---|---|
-| 段階 | **Phase 5a（チャンク・差分の計算・描画の省略）完了 → 次は Phase 5b（Web Worker）** |
+| 段階 | **Phase 5 完了（5a チャンク・差分の計算 / 5b Web Worker）→ 次は Phase 6（保存・読込 / User / API）** |
 | 置き場所 | `Desktop/drive-download-20260614T075216Z-3-001/my-application/`（**git 管理下**・ブランチ main） |
 | remote | `origin` = https://github.com/Budou128256/industry-sim （**Private**）。以後は `git push` で上がる |
-| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ Phase 1（置く・消す・回す・連続設置）/ GitHub へ push / Phase 2（ベルト・アーム・床・時間）/ Phase 3（鉱脈・採掘機・炉）/ Phase 4（電力。液体・保管は未定）/ **Phase 5a（チャンク・速さ）** |
-| 次の作業 | Phase 5b（Web Worker）の実装（下の「次にやること」） |
+| 済んだこと | 環境調査 / 既存コードの分類 / git init / Phase 0（決定と ARCHITECTURE.md）/ Phase 1（置く・消す・回す・連続設置）/ GitHub へ push / Phase 2（ベルト・アーム・床・時間）/ Phase 3（鉱脈・採掘機・炉）/ Phase 4（電力。液体・保管は未定）/ Phase 5a（チャンク・速さ）/ **Phase 5b（Web Worker）** |
+| 次の作業 | Phase 6 の方針を決める（下の「次にやること」） |
 | 動かし方 | `py -3 serve.py` → http://127.0.0.1:8080/ （テストは `/tests.html`、速さの測定は `/bench.html`）。GitHub Codespaces では `python3 serve.py` |
 
 ---
@@ -52,9 +52,9 @@
 - [x] **Phase 2** Belt / Item transportation / Inserter ✓ 2026-10-05（テスト38件すべて成功）
 - [x] **Phase 3** Recipe / Machine / Production ✓ 2026-10-05（テスト52件すべて成功）
 - [x] **Phase 4** Power ✓ 2026-10-05（テスト58件すべて成功）。**Fluid / Storage は未定**（ユーザーが「電力だけ」を選択）
-- [ ] **Phase 5** Chunk / 最適化 / Web Worker（ユーザーの選択で2つのPRに分ける）
+- [x] **Phase 5** Chunk / 最適化 / Web Worker（ユーザーの選択で2つのPRに分けた）
   - [x] **5a** チャンク・差分の計算・描画の省略 ✓ 2026-10-05（テスト63件すべて成功）
-  - [ ] **5b** シミュレータを Web Worker へ
+  - [x] **5b** シミュレータを Web Worker へ ✓ 2026-10-05（テスト65件すべて成功）
 - [ ] **Phase 6** Save・Load / User / API
 - [ ] **Phase 7** Advanced logistics / Research / AI / Multiplayer
 
@@ -98,11 +98,9 @@
 
 1. この `PLAN.md` と [ARCHITECTURE.md](ARCHITECTURE.md) を読む
 2. `py -3 serve.py` で動かし、`/tests.html` が全部成功することを確かめる（いまの状態の確認）
-3. Phase 5b を実装する（**実装前に方針を説明して合意を取る**）:
-   - シミュレータ（World + Sim）を Web Worker へ移す。画面（app.js / renderer）は今 sim の中身を直接読んでいるので、
-     「Worker から画面に映る範囲の写しをもらう」形に変える（`World.buildingsIn` が範囲の取り出しに使える）
-   - 編集（置く・消す・回す）はコマンドとして Worker へ送る。input.js はすでにコマンドを出す形
-   - core が DOM を触っていないことを先に確かめる（ARCHITECTURE.md の約束1）
+3. Phase 6 の方針を決める（**実装前に方針を説明して合意を取る**）:
+   - 保存・読込: 形はもうある（`World.toJSON` / `Sim.toJSON`。Worker の中にある）。まずブラウザの中に保存するか、ファイルに書き出すか、サーバに置くか
+   - User / API: サーバ方式は未定。**Django は使わない**（2026-10-05 決定）
 4. Phase 4 で後回しにした液体・保管の拡張は**未定**。やるかどうかをユーザーに聞いてから
 5. テストを足し、この表と段階チェックを更新してコミットし、`git push` で GitHub へ上げる
 
@@ -119,6 +117,18 @@
 | 保存 | `Sim.toJSON()` / `fromJSON()` で中身も保存できる（座標で持つ） |
 | 動作確認 | 「アイテムを置く」でマスに10個置ける（採掘機が動くまでの仮の道具） |
 | 入れていないもの | スプリッター（分岐）、アームのフィルタ、回収機、電力、回路、ドリル |
+
+## Phase 5b で決めたこと・やったこと（2026-10-05）
+
+| 項目 | 内容 |
+|---|---|
+| 置き場所 | World と Sim は **Web Worker の中**（`src/worker/worker.js` → `engine.js`）で動く。時間を進めるのも Worker |
+| 画面との受け渡し | 画面（`app.js`）は命令を送るだけ（`src/client.js`。置く・撤去・回す・鉱脈・アイテム・進める・再生・停止・中身を見る・全消去）。Worker は**画面に映る範囲（+2マス）の写し**を返し（`core/snapshot.js`）、画面は `render/view.js` で World / Sim と同じ形に戻して描く。renderer はほぼそのまま |
+| 写しを送る間隔 | 画面が描き終えて返事（ack）を返すまで次の写しを送らない。描くのが遅くても写しが溜まらない |
+| Worker が使えないとき | 同じ Engine を画面と同じスレッドで動かす（命令と返事は同じ）。画面の右上に「Worker で計算中 / 画面と同じスレッドで計算中」と出る |
+| 置ける・置けないの下見 | 緑・赤の下見は画面側で写しを見て判定し、本当に置くかは Worker が判定する |
+| 速さ（ヘッドレス Chromium、`/bench.html`） | 建物を大量に置いた直後に再生すると、画面と同じスレッドでは 512x512 で**約2秒**画面が止まった。Worker では止まらない（最長 17 ms = 1コマ）。落ち着いた後はどちらも 17〜33 ms |
+| 入れていないもの | 盤面の大きさを画面から変える操作（今も 64x64）。保存・読込（Phase 6） |
 
 ## Phase 5a で決めたこと・やったこと（2026-10-05）
 

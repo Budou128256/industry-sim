@@ -34,12 +34,18 @@ my-application/
     │   ├─ inventory.js  スロットとスタックの列
     │   ├─ machine.js    加工機
     │   ├─ miner.js      採掘機（鉱脈は world.resources）
+    │   ├─ snapshot.js   画面に映る範囲の写し（Worker から画面へ送る）
     │   └─ power.js      電力網（電線は world の床の層）
+    ├─ worker/
+    │   ├─ worker.js     Web Worker の入口（Phase 5b）
+    │   └─ engine.js     World と Sim を持ち、命令を実行して時間を進める
+    ├─ client.js         画面から Engine を呼ぶ窓口（Worker が使えなければ同じスレッドで動かす）
     ├─ render/
-    │   └─ renderer.js   World を**読むだけ**。Canvas に描く
+    │   ├─ renderer.js   World を**読むだけ**。Canvas に描く
+    │   └─ view.js       Worker から届いた写しを World / Sim と同じ形に戻す
     ├─ input/
     │   └─ input.js      入力を**コマンド**に変える。World を直接書き換えない
-    └─ app.js            配線（UI・Input・Renderer・World をつなぐ）
+    └─ app.js            配線（UI・Input・Renderer・client をつなぐ。World には直接触らない）
 ```
 
 ### 守る約束
@@ -64,7 +70,7 @@ my-application/
 | 再利用 | `data/*.json`（機械・レシピ・アイテム・挙動） | データ駆動の原型。新しい `data/` の形を決めるときの見本 |
 | 再利用 | `ck/model.py` / `ck/validate.py` | World / 検証の考え方 |
 | 分割が要る | `static/app.js`（1,261行） | UI・入力・描画・シミュレータ駆動・通信が同居。新しい構造では4つに分かれる |
-| 作り直し | シミュレータが Main Thread / World が配列 | Chunk は Phase 5a で済み。Worker は Phase 5b |
+| 作り直し | シミュレータが Main Thread / World が配列 | Phase 5 で済み（5a Chunk、5b Worker） |
 | 廃止 | 無し | Core Keeper 固有の生成器（串型・バス型）は、将来 `apps/corekeeper/` としてこの基盤の上に乗せる |
 
 ## 段階ごとの到達点

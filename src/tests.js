@@ -11,6 +11,9 @@ import { canPlace, dragDirection, lineCells, place, removeAt, rotateAt } from '.
 import { Registry } from './core/registry.js';
 import { Sim, TICK_HZ } from './core/sim.js';
 import { buildBeltLines } from './core/belt.js';
+import { makeSnapshot } from './core/snapshot.js';
+import { ViewSim, ViewWorld } from './render/view.js';
+import { Engine } from './worker/engine.js';
 
 const results = [];
 function test(name, fn) {
@@ -644,6 +647,75 @@ test('置く・消す・回すを繰り返しても、差分の計算は全部�
     seen.unpowered = Math.max(seen.unpowered, inc.unpowered.size);
   }
   ok(seen.lines > 3 && seen.power > 3 && seen.unpowered > 0, `試した盤面が簡単すぎた ${JSON.stringify(seen)}`);
+});
+
+/* ---- Web Worker との受け渡し（Phase 5b） ---- */
+function busyWorld() {
+  const w = simWorld(40, 20);
+  w.setResource(2, 2, 'ore');
+  put(w, 'pMiner', 3, 2, 'W');
+  for (let x = 4; x <= 8; x++) put(w, 'belt', x, 2, 'E');
+  put(w, 'gen', 3, 3);
+  for (let x = 4; x <= 9; x++) put(w, 'wire', x, 3);
+  put(w, 'pArm', 9, 2, 'W'); put(w, 'chest', 10, 2); put(w, 'smelter', 30, 10);
+  put(w, 'pArm', 20, 15, 'E');                      // 電気が届かない
+  return w;
+}
+test('写しは範囲の中だけを持ち、戻すと元の World / Sim と同じに読める', () => {
+  const w = busyWorld();
+  const sim = new Sim(w, simReg);
+  sim.addItems(15, 5, 'ore', 4);
+  run(sim, 6);
+  const rect = { x0: 0, y0: 0, x1: 22, y1: 16 };
+  const snap = JSON.parse(JSON.stringify(makeSnapshot(w, sim, rect)));   // postMessage で送れる形か
+  const vw = new ViewWorld(snap), vs = new ViewSim(snap);
+  ok(!snap.buildings.some(b => b.type === 'smelter'), '範囲の外の建物が入った');
+  eq(vw.count, w.count);
+  eq(vs.tick, sim.tick);
+  for (let y = 0; y <= 16; y++) {
+    for (let x = 0; x <= 22; x++) {
+      const k = key(x, y);
+      eq(vw.at(x, y) && vw.at(x, y).id, w.at(x, y) && w.at(x, y).id, `(${x}, ${y}) の建物`);
+      eq(vw.floorAt(x, y) && vw.floorAt(x, y).id, w.floorAt(x, y) && w.floorAt(x, y).id, `(${x}, ${y}) の床`);
+      eq(vw.resourceAt(x, y), w.resourceAt(x, y));
+      eq(vs.power.get(k) || 0, sim.power.get(k) || 0, `(${x}, ${y}) の電力`);
+      eq(vs.ground.get(k) || [], sim.ground.get(k) && sim.ground.get(k).length ? sim.ground.get(k) : []);
+    }
+  }
+  for (const b of vw.buildingsIn(0, 0, 22, 16)) {
+    eq(vs.belts.get(b.id) || null, sim.belts.get(b.id) || null);
+    eq(vs.unpowered.has(b.id), sim.unpowered.has(b.id));
+  }
+  ok(vs.unpowered.has(w.at(20, 15).id), '電気の届かないアームが写しに無い');
+});
+test('エンジン: 命令で置く・回す・撤去・進めるができ、画面が描き終えるまで次の写しを送らない', () => {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  eng.handle({ id: 1, op: 'view', rect: { x0: 0, y0: 0, x1: 19, y1: 9 } });
+  eq(sent.filter(m => m.type === 'view').length, 1);
+  eng.handle({ id: 2, op: 'place', type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 2, y: 1, dir: 'E' }, { x: 1, y: 1, dir: 'E' }] });
+  const placed = sent.find(m => m.re === 2).result;
+  eq([placed.placed, placed.reason], [2, 'すでに何か置いてあります']);
+  eq(sent.filter(m => m.type === 'view').length, 1, '描き終える前に次の写しを送った');
+  eng.handle({ op: 'ack' });
+  eq(sent.filter(m => m.type === 'view').length, 2);
+  eq(sent.filter(m => m.type === 'view')[1].snap.count, 2);
+  eng.handle({ id: 3, op: 'items', x: 1, y: 1, item: 'ore', count: 3 });
+  eq(sent.find(m => m.re === 3).result.where, 'belt');
+  eng.handle({ id: 4, op: 'rotate', x: 2, y: 1 });
+  eq(sent.find(m => m.re === 4).result.dir, 'S');
+  eng.handle({ id: 5, op: 'step', ticks: TICK_HZ });
+  eng.handle({ id: 6, op: 'inspect', x: 2, y: 1 });
+  eq(total(sent.find(m => m.re === 6).result.belt), 3, '回したベルトへ流れていない');
+  eng.handle({ id: 7, op: 'remove', x: 2, y: 1 });
+  eq(sent.find(m => m.re === 7).result.type, 'belt');
+  eng.handle({ id: 8, op: 'inspect', x: 2, y: 1 });
+  eq(total(sent.find(m => m.re === 8).result.ground), 3, '撤去したベルトの中身が床に落ちていない');
+  eng.handle({ id: 9, op: 'nothing' });
+  ok(sent.find(m => m.re === 9).error, '知らない命令でエラーにならない');
+  eng.handle({ id: 10, op: 'clear' });
+  eng.handle({ op: 'ack' });
+  eq(sent.filter(m => m.type === 'view').pop().snap.count, 0);
 });
 
 /* ---- registry（データを実際に読む） ---- */
