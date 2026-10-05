@@ -4,7 +4,7 @@
  * 盤面を DOM 要素で作らない（建物が増えても重くならないように）。
  */
 
-import { DELTA, footprint, rotatedSize } from '../core/grid.js';
+import { DELTA, footprint, key, rotatedSize } from '../core/grid.js';
 import { minerOutput, minerTargets } from '../core/miner.js';
 import { craftTicks, recipeFor } from '../core/machine.js';
 import { TICK_HZ } from '../core/sim.js';
@@ -93,39 +93,33 @@ export class Renderer {
     }
     ctx.stroke();
 
+    // ここから下は、画面に映っているチャンクだけを見る（Phase 5。盤面が大きくても描く量は画面の広さで決まる）
     // 鉱脈（地面の層。建物の下）
-    for (const [k, item] of world.resources) {
-      const [x, y] = k.split(',').map(Number);
-      if (x < x0 - 1 || x > x1 || y < y0 - 1 || y > y1) continue;
-      this.drawResource(x, y, item);
-    }
+    world.resources.forEachIn(x0, y0, x1, y1, (x, y, item) => this.drawResource(x, y, item));
 
-    // 建物（見えている範囲だけ描く）
     // 電気の届いているマス（薄い黄色。強いほど濃い）
-    if (sim && this.showPower) {
+    if (sim && this.showPower && sim.power.size) {
       ctx.fillStyle = '#facc15';
-      for (const [k, lv] of sim.power) {
-        const [x, y] = k.split(',').map(Number);
-        if (lv < 1 || x < x0 - 1 || x > x1 || y < y0 - 1 || y > y1) continue;
-        const { px, py } = this.toScreen(x, y);
-        ctx.globalAlpha = 0.06 + 0.12 * Math.min(1, lv / 24);
-        ctx.fillRect(px, py, t, t);
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const lv = sim.power.get(key(x, y));
+          if (!(lv >= 1)) continue;
+          const { px, py } = this.toScreen(x, y);
+          ctx.globalAlpha = 0.06 + 0.12 * Math.min(1, lv / 24);
+          ctx.fillRect(px, py, t, t);
+        }
       }
       ctx.globalAlpha = 1;
     }
 
     // 床の層（電線）を先に、その上に設置物
-    const visible = bld => {
-      const size = rotatedSize(bld.size, bld.dir);
-      return !(bld.x + size.width < x0 || bld.x > x1 || bld.y + size.height < y0 || bld.y > y1);
-    };
-    world.forEach(bld => { if (bld.layer === 'floor' && visible(bld)) this.drawWire(world, bld); });
-    world.forEach(bld => {
-      if (bld.layer === 'floor' || !visible(bld)) return;
-      this.drawBuilding(bld, rotatedSize(bld.size, bld.dir), sim);
-    });
+    const shown = world.buildingsIn(x0, y0, x1, y1);
+    for (const bld of shown) if (bld.layer === 'floor') this.drawWire(world, bld);
+    for (const bld of shown) {
+      if (bld.layer !== 'floor') this.drawBuilding(bld, rotatedSize(bld.size, bld.dir), sim);
+    }
 
-    if (sim) this.drawItems(world, sim, { x0, y0, x1, y1 });
+    if (sim) this.drawItems(sim, shown, { x0, y0, x1, y1 });
 
     if (this.ghost) this.drawGhost(this.ghost);
     if (this.hover) this.drawHover(this.hover);
@@ -194,33 +188,26 @@ export class Renderer {
     }
   }
 
-  /** ベルトの上・箱の中・床のアイテムを描く。1マスにつき先頭の種類の色と合計数。 */
-  drawItems(world, sim, { x0, y0, x1, y1 }) {
-    const visible = (x, y) => x >= x0 - 1 && x <= x1 && y >= y0 - 1 && y <= y1;
-    for (const [id, list] of sim.belts) {
-      const b = world.buildings.get(id);
-      if (!b || !list.length || !visible(b.x, b.y)) continue;
-      this.drawStack(b.x, b.y, list, 'belt');
+  /** ベルトの上・箱の中・床のアイテムを描く。1マスにつき先頭の種類の色と合計数。shown は画面に映っている建物。 */
+  drawItems(sim, shown, { x0, y0, x1, y1 }) {
+    for (const b of shown) {
+      const list = sim.belts.get(b.id);
+      if (list && list.length) this.drawStack(b.x, b.y, list, 'belt');
+      const ch = sim.containers.get(b.id);
+      if (ch) {
+        const items = ch.slots.filter(Boolean);
+        if (items.length) this.drawStack(b.x, b.y, items, 'container');
+      }
+      const m = sim.machines.get(b.id);
+      if (m) this.drawMachine(b, m);
+      if (sim.miners.has(b.id)) this.drawMinerOutput(b);
     }
-    for (const [id, ch] of sim.containers) {
-      const b = world.buildings.get(id);
-      const list = ch.slots.filter(Boolean);
-      if (!b || !list.length || !visible(b.x, b.y)) continue;
-      this.drawStack(b.x, b.y, list, 'container');
-    }
-    for (const [id, m] of sim.machines) {
-      const b = world.buildings.get(id);
-      if (b && visible(b.x, b.y)) this.drawMachine(b, m);
-    }
-    for (const id of sim.miners.keys()) {
-      const b = world.buildings.get(id);
-      if (b && visible(b.x, b.y)) this.drawMinerOutput(b);
-    }
-    for (const [k, list] of sim.ground) {
-      if (!list.length) continue;
-      const [x, y] = k.split(',').map(Number);
-      if (!visible(x, y)) continue;
-      this.drawStack(x, y, list, 'ground');
+    if (!sim.ground.size) return;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const list = sim.ground.get(key(x, y));
+        if (list && list.length) this.drawStack(x, y, list, 'ground');
+      }
     }
   }
 

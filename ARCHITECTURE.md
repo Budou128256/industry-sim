@@ -24,10 +24,11 @@ my-application/
 └─ src/
     ├─ core/             ★ ゲームの状態と規則。描画もDOMも知らない
     │   ├─ registry.js   データの読み込みと id 引き
-    │   ├─ grid.js       座標・近傍・範囲（後で Chunk に拡張する）
-    │   ├─ world.js      World（grid + buildings）。状態の持ち主。物の層と床の層（電線）を持つ
+    │   ├─ grid.js       座標・近傍・範囲・マスの鍵（数値）
+    │   ├─ chunks.js     32x32 の区画でマスごとの値を持つ（World の層の入れ物）
+    │   ├─ world.js      World（grid + buildings）。状態の持ち主。物の層・床の層（電線）・鉱脈をチャンクで持ち、変更を記録する
     │   ├─ placement.js  置ける/置けないの判定、設置・撤去・回転
-    │   ├─ sim.js        時間と中身（ベルト・箱・床）。World の変更には sync() で追いつく
+    │   ├─ sim.js        時間と中身（ベルト・箱・床）。World の変更には sync() で追いつく（変更の記録を読み、変わった所の近くだけ計算し直す）
     │   ├─ belt.js       ベルトの線
     │   ├─ inserter.js   アーム
     │   ├─ inventory.js  スロットとスタックの列
@@ -63,7 +64,7 @@ my-application/
 | 再利用 | `data/*.json`（機械・レシピ・アイテム・挙動） | データ駆動の原型。新しい `data/` の形を決めるときの見本 |
 | 再利用 | `ck/model.py` / `ck/validate.py` | World / 検証の考え方 |
 | 分割が要る | `static/app.js`（1,261行） | UI・入力・描画・シミュレータ駆動・通信が同居。新しい構造では4つに分かれる |
-| 作り直し | シミュレータが Main Thread / World が配列 | Phase 5 で Worker と Chunk へ |
+| 作り直し | シミュレータが Main Thread / World が配列 | Chunk は Phase 5a で済み。Worker は Phase 5b |
 | 廃止 | 無し | Core Keeper 固有の生成器（串型・バス型）は、将来 `apps/corekeeper/` としてこの基盤の上に乗せる |
 
 ## 段階ごとの到達点

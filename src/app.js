@@ -8,7 +8,7 @@ import { Registry } from './core/registry.js';
 import { World } from './core/world.js';
 import { Sim, TICK_HZ } from './core/sim.js';
 import { canPlace, dragDirection, lineCells, place, removeAt, rotateAt } from './core/placement.js';
-import { rotateCW } from './core/grid.js';
+import { key, rotateCW } from './core/grid.js';
 import { Renderer } from './render/renderer.js';
 import { Input } from './input/input.js';
 
@@ -296,7 +296,7 @@ function inspect(x, y) {
     parts.push(`${m.state} / 入力: ${m.input ? describe([m.input]) : '空'} / 出力: ${m.output ? describe([m.output]) : '空'}`);
   }
   if (c.miner) parts.push(c.miner.state);
-  const lv = state.sim.power.get(`${x},${y}`) || 0;
+  const lv = state.sim.power.get(key(x, y)) || 0;
   if (lv > 0) parts.push(`電力 ${lv}`);
   const b0 = state.world.at(x, y);
   if (b0 && state.sim.unpowered.has(b0.id)) parts.push('電気が届いていません');

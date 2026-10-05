@@ -4,7 +4,8 @@
  * core は DOM を知らないので、ここでは描画も入力も使わない。
  */
 
-import { DELTA, footprint, neighbors, rotateCW, rotatedSize } from './core/grid.js';
+import { CHUNK, DELTA, footprint, key, neighbors, parseKey, rotateCW, rotatedSize } from './core/grid.js';
+import { ChunkLayer } from './core/chunks.js';
 import { World } from './core/world.js';
 import { canPlace, dragDirection, lineCells, place, removeAt, rotateAt } from './core/placement.js';
 import { Registry } from './core/registry.js';
@@ -519,7 +520,7 @@ test('電気は電線をたどって1マスごとに弱まる', () => {
   put(w, 'gen', 0, 0);                            // 強さ 3 → 隣 3, 2, 1
   for (let x = 1; x <= 5; x++) put(w, 'wire', x, 0);
   const sim = new Sim(w, simReg);
-  eq([1, 2, 3, 4].map(x => sim.power.get(`${x},0`) || 0), [3, 2, 1, 0]);
+  eq([1, 2, 3, 4].map(x => sim.power.get(key(x, 0)) || 0), [3, 2, 1, 0]);
 });
 test('電気が届かないアームは動かない', () => {
   const w = simWorld(10, 3);
@@ -557,6 +558,92 @@ test('電線は保存して読み戻せる', () => {
   put(w, 'chest', 1, 0); put(w, 'wire', 1, 0);
   const back = World.fromJSON(JSON.parse(JSON.stringify(w)), simReg);
   eq(back.at(1, 0).type, 'chest'); eq(back.floorAt(1, 0).type, 'wire');
+});
+
+/* ---- チャンクと差分の計算（Phase 5） ---- */
+test('マスの鍵は数値で、負の座標も元に戻せる', () => {
+  for (const [x, y] of [[0, 0], [5, 7], [-1, 0], [0, -1], [-300, 1200], [8191, -8192]]) {
+    eq(typeof key(x, y), 'number');
+    eq(parseKey(key(x, y)), { x, y });
+  }
+  eq(new Set([key(-1, 0), key(0, -1), key(1, 0), key(0, 1), key(0, 0)]).size, 5, '鍵が重なった');
+});
+test('チャンクの層: 区画をまたいで置ける・範囲で引ける・空の区画は捨てる', () => {
+  const L = new ChunkLayer();
+  L.set(CHUNK - 1, 0, 'a'); L.set(CHUNK, 0, 'b'); L.set(3, CHUNK * 2 + 1, 'c'); L.set(-1, -1, 'd');
+  eq(L.size, 4);
+  eq(L.chunks.size, 4);
+  eq([L.get(CHUNK - 1, 0), L.get(CHUNK, 0), L.get(-1, -1), L.get(0, 0)], ['a', 'b', 'd', undefined]);
+  const got = [];
+  L.forEachIn(CHUNK - 1, 0, CHUNK, 0, (x, y, v) => got.push(v));
+  eq(got, ['a', 'b']);
+  L.set(CHUNK, 0, 'b2');
+  eq(L.size, 4, '上書きで数が増えた');
+  ok(L.delete(CHUNK, 0));
+  ok(!L.delete(CHUNK, 0), '2回消せた');
+  eq(L.chunks.size, 3, '空の区画が残った');
+});
+test('画面の範囲にかかる建物だけを引ける（2x2 は端が入れば含む）', () => {
+  const w = simWorld(200, 200);
+  put(w, 'belt', 1, 1); put(w, 'smelter', 99, 99); put(w, 'wire', 150, 150); put(w, 'belt', 150, 150);
+  eq(w.buildingsIn(100, 100, 120, 120).map(b => b.type), ['smelter']);
+  eq(w.buildingsIn(140, 140, 160, 160).map(b => b.type), ['wire', 'belt'], '床の層が先でない');
+  eq(w.buildingsIn(0, 0, 10, 10).length, 1);
+});
+test('変更の記録: 古すぎると null（全部を計算し直す合図）', () => {
+  const w = simWorld(10, 10);
+  const r0 = w.revision;
+  const b = put(w, 'belt', 1, 1);
+  eq(w.changesSince(r0).map(c => c.op), ['add']);
+  w.remove(b);
+  eq(w.changesSince(r0).map(c => c.op), ['add', 'remove']);
+  eq(w.changesSince(w.revision), []);
+  for (let i = 0; i < 10000; i++) w.setResource(0, 0, i % 2 ? null : 'ore');
+  eq(w.changesSince(r0), null);
+});
+
+/** 差分で追いついた Sim と、毎回全部を計算し直した Sim が同じになるか比べる。 */
+function sameAsFull(a, b, msg) {
+  const lines = s => s.beltLines.map(l => `${l.ring ? 'R' : ''}${l.ids.join('>')}`);
+  eq(lines(a), lines(b), `${msg}: ベルトの線が違う`);
+  const pw = s => [...s.power].filter(([, v]) => v > 0).sort((p, q) => p[0] - q[0]);
+  eq(pw(a), pw(b), `${msg}: 電力が違う`);
+  eq([...a.unpowered].sort((p, q) => p - q), [...b.unpowered].sort((p, q) => p - q), `${msg}: 電気の届かない建物が違う`);
+  eq(a.inserters.map(x => x.id), b.inserters.map(x => x.id), `${msg}: アームの順が違う`);
+  eq(a.toJSON(), b.toJSON(), `${msg}: 中身が違う`);
+}
+test('置く・消す・回すを繰り返しても、差分の計算は全部の計算し直しと同じ結果になる', () => {
+  let seed = 12345;
+  const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return Math.floor(seed / 65536) % n; };
+  const w = simWorld(14, 10);
+  for (let i = 0; i < 20; i++) w.setResource(rnd(14), rnd(10), 'ore');
+  const inc = new Sim(w, simReg), full = new Sim(w, simReg);
+  const seen = { lines: 0, power: 0, unpowered: 0 };     // 試した盤面が空っぽでなかったか
+  const kinds = ['belt', 'belt', 'belt', 'stopBelt', 'inserter', 'chest', 'gen', 'wire', 'wire', 'pArm', 'pMiner', 'miner'];
+  for (let round = 0; round < 150; round++) {
+    for (let k = 0, n = 1 + rnd(4); k < n; k++) {
+      const x = rnd(14), y = rnd(10), op = rnd(10);
+      if (op < 6) put(w, kinds[rnd(kinds.length)], x, y, ['N', 'E', 'S', 'W'][rnd(4)]);
+      else if (op < 8) removeAt(w, x, y);
+      else rotateAt(w, simReg, x, y);
+    }
+    if (rnd(3) === 0) {
+      const [x, y, n] = [rnd(14), rnd(10), 1 + rnd(5)];
+      inc.addItems(x, y, 'ore', n);
+      full.rev = -1;                                // こちらは毎回全部を計算し直す
+      full.addItems(x, y, 'ore', n);
+    }
+    for (let t = 0; t < 7; t++) {
+      inc.step();
+      full.rev = -1;
+      full.step();
+    }
+    sameAsFull(inc, full, `${round} 回目`);
+    seen.lines = Math.max(seen.lines, inc.beltLines.length);
+    seen.power = Math.max(seen.power, inc.power.size);
+    seen.unpowered = Math.max(seen.unpowered, inc.unpowered.size);
+  }
+  ok(seen.lines > 3 && seen.power > 3 && seen.unpowered > 0, `試した盤面が簡単すぎた ${JSON.stringify(seen)}`);
 });
 
 /* ---- registry（データを実際に読む） ---- */

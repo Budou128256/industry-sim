@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>速さの測定</title>
+<style>
+  body{margin:0;padding:18px;font:14px/1.7 "Segoe UI","Yu Gothic UI",system-ui,sans-serif;
+       background:#0f1117;color:#e7ebf3}
+  h1{font-size:16px;margin:0 0 4px}
+  .sub{color:#93a0b4;font-size:12.5px;margin-bottom:14px}
+  button,select{font:inherit;background:#1b2130;color:#e7ebf3;border:1px solid #2c3446;border-radius:6px;padding:4px 10px}
+  table{border-collapse:collapse;margin-top:12px}
+  td,th{border:1px solid #2c3446;padding:4px 10px;text-align:right}
+  th{background:#161a23}
+  td:first-child,th:first-child{text-align:left}
+  canvas{display:block;width:960px;height:540px;margin-top:14px;border:1px solid #2c3446}
+</style>
+</head>
+<body>
+<h1>速さの測定</h1>
+<div class="sub">採掘機 → ベルト → アーム → 炉 → アーム → 箱 と発電機・電線の列（建物26個）を盤面いっぱいに敷き詰めて測る。
+数字はこのPCとブラウザでの値（ms = 1000分の1秒）。</div>
+<label>盤面 <select id="size"><option>64</option><option selected>256</option><option>512</option></select></label>
+<button id="run">測る</button>
+<span id="msg"></span>
+<table id="out"><tr><th>盤面</th><th>建物</th><th>最初の計算</th><th>1 tick</th><th>1つ置く・消す</th><th>1コマ描く</th></tr></table>
+<canvas id="board"></canvas>
+<script type="module" src="src/bench.js"></script>
+</body>
+</html>

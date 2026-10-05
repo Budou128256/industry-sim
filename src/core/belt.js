@@ -15,7 +15,7 @@
  *   ぐるっと一周しているベルトは「輪」として扱う。
  */
 
-import { DELTA, inBounds } from './grid.js';
+import { DELTA, DIRS, inBounds } from './grid.js';
 import { pileMerge, pilePush } from './inventory.js';
 
 /** ベルトの定義（data の belt）。ベルトでなければ null。 */
@@ -28,26 +28,45 @@ export function frontCell(b) {
   return { x: b.x + DELTA[b.dir].x, y: b.y + DELTA[b.dir].y };
 }
 
-/** 盤面のベルトを線にまとめる。戻り値: [{ ids:[後ろ→先頭], ring, type }] */
-export function buildBeltLines(world, registry) {
-  const belts = [];
-  world.forEach(b => { if (beltDef(registry, b)) belts.push(b); });
-  belts.sort((a, b) => (a.y - b.y) || (a.x - b.x));   // 順序を固定（結果を毎回同じにする）
+/** b の次のベルト（正面のマスにある同じ種類のベルト）。無ければ null。 */
+function nextBelt(world, registry, b) {
+  const f = frontCell(b);
+  const n = world.at(f.x, f.y);
+  return n && n.type === b.type && n.id !== b.id && beltDef(registry, n) ? n : null;
+}
 
-  const next = new Map();       // id -> 次のベルトの id
-  const feeders = new Map();    // id -> 入ってくるベルトの数
-  for (const b of belts) {
-    const f = frontCell(b);
-    const n = world.at(f.x, f.y);
-    if (n && n.type === b.type && beltDef(registry, n) && n.id !== b.id) {
-      next.set(b.id, n.id);
-      feeders.set(n.id, (feeders.get(n.id) || 0) + 1);
+/** n へ入ってくるベルトの数（上下左右から n を向いている同じ種類のベルト）。 */
+function feederCount(world, registry, n) {
+  let k = 0;
+  for (const d of DIRS) {
+    const p = world.at(n.x + DELTA[d].x, n.y + DELTA[d].y);
+    if (p && p.id !== n.id && beltDef(registry, p)) {
+      const q = nextBelt(world, registry, p);
+      if (q && q.id === n.id) k++;
     }
   }
-  // 同じ線に続けてよいか（次のベルトへ入るのが自分だけ）
-  const continues = id => next.has(id) && feeders.get(next.get(id)) === 1;
-  const continued = new Set();   // 前のベルトから同じ線として続いてくるベルト
-  for (const id of next.keys()) if (continues(id)) continued.add(next.get(id));
+  return k;
+}
+
+/**
+ * ベルトを線にまとめる。戻り値: [{ ids:[後ろ→先頭], ring, type }]
+ * belts を渡すとそのベルトだけをまとめる（変わった所の近くだけ作り直すとき。Phase 5）。
+ * 渡すベルトは「線の途中で切れない」まとまりであること（Sim.sync が線ごと渡す）。
+ */
+export function buildBeltLines(world, registry, belts = null) {
+  if (!belts) {
+    belts = [];
+    world.forEach(b => { if (beltDef(registry, b)) belts.push(b); });
+  }
+  belts = [...belts].sort((a, b) => (a.y - b.y) || (a.x - b.x));   // 順序を固定（結果を毎回同じにする）
+
+  const next = new Map();       // id -> 次のベルトの id（同じ線として続くときだけ）
+  for (const b of belts) {
+    const n = nextBelt(world, registry, b);
+    // 次のベルトへ入るのが自分だけなら同じ線を続ける。合流していればそこで切る
+    if (n && feederCount(world, registry, n) === 1) next.set(b.id, n.id);
+  }
+  const continued = new Set(next.values());   // 前のベルトから同じ線として続いてくるベルト
 
   const lines = [];
   const seen = new Set();
@@ -55,7 +74,7 @@ export function buildBeltLines(world, registry) {
     const ids = [start];
     seen.add(start);
     let cur = start;
-    while (continues(cur) && !seen.has(next.get(cur))) {
+    while (next.has(cur) && !seen.has(next.get(cur))) {
       cur = next.get(cur);
       ids.push(cur);
       seen.add(cur);
@@ -66,12 +85,18 @@ export function buildBeltLines(world, registry) {
     if (seen.has(b.id) || continued.has(b.id)) continue;
     lines.push({ ids: walk(b.id), ring: false, type: b.type });
   }
-  // 残ったものは輪（どこから始めても同じ）
+  // 残ったものは輪（どこから始めても同じ。いちばん上・左のベルトから）
   for (const b of belts) {
     if (seen.has(b.id)) continue;
     lines.push({ ids: walk(b.id), ring: true, type: b.type });
   }
   return lines;
+}
+
+/** 線の並び順（線の始まりのベルトの位置で決める。全部作り直しても一部だけでも同じ順になる）。 */
+export function sortBeltLines(world, lines) {
+  const pos = l => world.buildings.get(l.ids[0]);
+  return lines.sort((a, b) => (a.ring - b.ring) || (pos(a).y - pos(b).y) || (pos(a).x - pos(b).x));
 }
 
 /** そのベルトが送る間隔（tick）。 */
