@@ -6,6 +6,7 @@
 
 import { Registry } from './core/registry.js';
 import { World } from './core/world.js';
+import { Sim, TICK_HZ } from './core/sim.js';
 import { canPlace, dragDirection, lineCells, place, removeAt, rotateAt } from './core/placement.js';
 import { rotateCW } from './core/grid.js';
 import { Renderer } from './render/renderer.js';
@@ -14,17 +15,26 @@ import { Input } from './input/input.js';
 const state = {
   registry: null,
   world: null,
+  sim: null,
   renderer: null,
-  selected: null,     // 選んでいる建物の id
+  selected: null,     // 選んでいる建物の id（ITEM_TOOL ならアイテムを置く道具）
+  running: false,     // 再生中か
+  carry: 0,           // 次の tick までに溜まった時間（tick 単位）
+  lastFrame: 0,
   dir: 'N',           // これから置く向き
   dragged: new Set(), // 1回のドラッグで置いたマス
 };
 
 const $ = id => document.getElementById(id);
 
+/** 動作確認用の道具: クリックしたマスにアイテムを置く（採掘機が動くのは Phase 3 から）。 */
+const ITEM_TOOL = '__items';
+const ITEM_AMOUNT = 10;
+
 async function main() {
   state.registry = await Registry.load('data');
   state.world = new World({ width: 64, height: 64 });
+  state.sim = new Sim(state.world, state.registry);
   state.renderer = new Renderer($('board'), state.registry);
   state.renderer.resize();
 
@@ -35,12 +45,23 @@ async function main() {
   $('btnClear').onclick = () => {
     if (!state.world.count) return;
     state.world = new World({ width: 64, height: 64 });
+    state.sim = new Sim(state.world, state.registry);
     draw(); status(`全部消しました`);
   };
   $('btnRotate').onclick = () => {
     state.dir = rotateCW(state.dir);
     status(`これから置く向き: ${state.dir}`);
   };
+
+  $('btnPlay').onclick = togglePlay;
+  $('btnTick').onclick = () => { stop(); state.sim.step(); draw(); };
+  $('btnSec').onclick = () => { stop(); state.sim.stepSecond(); draw(); };
+  const sel = $('itemSel');
+  for (const it of state.registry.items.values()) {
+    const o = document.createElement('option');
+    o.value = it.id; o.textContent = it.name;
+    sel.appendChild(o);
+  }
 
   if (state.registry.problems.length) {
     status(`データに問題: ${state.registry.problems[0]}`, true);
@@ -76,12 +97,55 @@ function buildPalette() {
       box.appendChild(el);
     }
   }
+  const h = document.createElement('div');
+  h.className = 'group';
+  h.textContent = '動作確認';
+  box.appendChild(h);
+  const el = document.createElement('button');
+  el.className = 'pal';
+  el.dataset.id = ITEM_TOOL;
+  el.innerHTML = `<i style="background:#e5e7eb"></i><span class="n">アイテムを置く</span>`
+    + `<span class="sz">+${ITEM_AMOUNT}</span>`;
+  el.onclick = () => selectBuilding(ITEM_TOOL);
+  box.appendChild(el);
+}
+
+/* ---------- 時間 ---------- */
+
+function togglePlay() {
+  if (state.running) { stop(); return; }
+  state.running = true;
+  state.carry = 0;
+  state.lastFrame = performance.now();
+  $('btnPlay').textContent = '⏸ 停止';
+  requestAnimationFrame(frame);
+}
+
+function stop() {
+  state.running = false;
+  $('btnPlay').textContent = '▶ 再生';
+}
+
+/** 画面の1コマ。経った時間ぶん tick を進める（遅れても一度に進めるのは1秒まで）。 */
+function frame(now) {
+  if (!state.running) return;
+  state.carry += Math.min(1, (now - state.lastFrame) / 1000) * TICK_HZ;
+  state.lastFrame = now;
+  let moved = false;
+  while (state.carry >= 1) { state.sim.step(); state.carry -= 1; moved = true; }
+  if (moved) draw();
+  requestAnimationFrame(frame);
 }
 
 function selectBuilding(id) {
   state.selected = id;
   for (const el of document.querySelectorAll('.pal')) {
     el.classList.toggle('sel', el.dataset.id === id);
+  }
+  if (id === ITEM_TOOL) {
+    state.renderer.ghost = null;
+    status(`クリックしたマスに ${itemName($('itemSel').value)} を ${ITEM_AMOUNT} 個置きます（保管箱なら中へ、ベルトなら上へ、それ以外は床へ）`);
+    return;
   }
   const def = state.registry.building(id);
   status(`${def.name} を選択${def.directional ? '（R で回転）' : ''}`);
@@ -90,7 +154,8 @@ function selectBuilding(id) {
 /** Input から来たコマンドをここで実行する。 */
 function onCommand(cmd) {
   const { registry, world, renderer } = state;
-  const def = state.selected ? registry.building(state.selected) : null;
+  const tool = state.selected === ITEM_TOOL;
+  const def = state.selected && !tool ? registry.building(state.selected) : null;
 
   switch (cmd.type) {
     case 'hover': {
@@ -103,6 +168,7 @@ function onCommand(cmd) {
     }
     case 'place': {
       state.dragged.clear();
+      if (tool) { addItems(cmd.x, cmd.y); break; }
       if (!def) { inspect(cmd.x, cmd.y); break; }
       tryPlace(def, cmd.x, cmd.y, state.dir);
       draw();
@@ -154,17 +220,48 @@ function tryPlace(def, x, y, dir) {
   return true;
 }
 
+function addItems(x, y) {
+  const { world, sim } = state;
+  if (x < 0 || y < 0 || x >= world.width || y >= world.height) { status('盤面の外です', true); return; }
+  const item = $('itemSel').value;
+  const where = sim.addItems(x, y, item, ITEM_AMOUNT);
+  const label = { belt: 'ベルトの上', container: '保管箱の中', ground: '床' }[where];
+  status(`(${x}, ${y}) の${label}に ${itemName(item)} を ${ITEM_AMOUNT} 個`);
+  draw();
+}
+
+function itemName(id) {
+  const it = state.registry.item(id);
+  return it ? it.name : id;
+}
+
+/** スタックの列を「鉄鉱石 10, 銅鉱石 3」のように書く。 */
+function describe(list) {
+  const sum = new Map();
+  for (const s of list) if (s) sum.set(s.item, (sum.get(s.item) || 0) + s.count);
+  return [...sum].map(([id, n]) => `${itemName(id)} ${n}`).join(', ');
+}
+
 function inspect(x, y) {
+  const c = state.sim.contentsAt(x, y);
+  const parts = [];
+  if (c.belt && c.belt.length) parts.push(`ベルト上: ${describe(c.belt)}`);
+  if (c.container) parts.push(`中身: ${describe(c.container.slots) || '空'}`
+    + `（${c.container.slots.filter(Boolean).length}/${c.container.slots.length} 枠）`);
+  if (c.ground.length) parts.push(`床: ${describe(c.ground)}`);
+  const extra = parts.length ? ` — ${parts.join(' / ')}` : '';
   const b = state.world.at(x, y);
-  if (!b) { status(`(${x}, ${y}) は空きマス`); return; }
+  if (!b) { status(`(${x}, ${y}) は空きマス${extra}`); return; }
   const def = state.registry.building(b.type);
   status(`(${b.x}, ${b.y}) ${def.name}${def.directional ? ` / 向き ${b.dir}` : ''}`
-    + `${def.note ? ` — ${def.note}` : ''}`);
+    + (extra || `${def.note ? ` — ${def.note}` : ''}`));
 }
 
 function draw() {
-  state.renderer.draw(state.world);
+  state.sim.sync();
+  state.renderer.draw(state.world, state.sim);
   $('count').textContent = state.world.count;
+  $('clock').textContent = `${state.sim.seconds.toFixed(2)} 秒（${state.sim.tick} tick）`;
 }
 
 function status(text, warn = false) {

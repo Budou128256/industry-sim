@@ -8,6 +8,8 @@ import { DELTA, footprint, neighbors, rotateCW, rotatedSize } from './core/grid.
 import { World } from './core/world.js';
 import { canPlace, dragDirection, lineCells, place, removeAt, rotateAt } from './core/placement.js';
 import { Registry } from './core/registry.js';
+import { Sim, TICK_HZ } from './core/sim.js';
+import { buildBeltLines } from './core/belt.js';
 
 const results = [];
 function test(name, fn) {
@@ -136,6 +138,193 @@ test('ドラッグの向きが取れる', () => {
   eq(dragDirection({ x: 1, y: 1 }, { x: 1, y: 1 }), null);
 });
 
+/* ---- sim（Phase 2: ベルト / アーム / 床） ---- */
+// data/ に依存しない小さな定義で確かめる
+const simDefs = {
+  belt: { id: 'belt', size: SIZE_1, directional: true, belt: { tilesPerSecond: 1, onBlocked: 'drop' } },
+  stopBelt: { id: 'stopBelt', size: SIZE_1, directional: true, belt: { tilesPerSecond: 1, onBlocked: 'stop' } },
+  inserter: { id: 'inserter', size: SIZE_1, directional: true, inserter: { periodSeconds: 1, amount: 'stack' } },
+  chest: { id: 'chest', size: SIZE_1, directional: false, container: { slots: 2 } },
+  furnace: defFurnace,
+};
+const simReg = {
+  building: id => simDefs[id],
+  item: id => ({ ore: { id: 'ore', stackSize: 10 }, plate: { id: 'plate', stackSize: 10 } }[id]),
+};
+function simWorld(w = 10, h = 3) { return new World({ width: w, height: h }); }
+function put(w, id, x, y, dir = 'N') { return place(w, simDefs[id], x, y, dir); }
+const total = list => (list || []).reduce((a, s) => a + s.count, 0);
+const run = (sim, sec) => { for (let i = 0; i < sec; i++) sim.stepSecond(); };
+
+test('1秒は20tick', () => {
+  eq(TICK_HZ, 20);
+  const sim = new Sim(simWorld(), simReg);
+  eq(sim.stepSecond(), 20);
+});
+test('まっすぐ並んだベルトは1本の線になる', () => {
+  const w = simWorld();
+  const a = put(w, 'belt', 0, 0, 'E'), b = put(w, 'belt', 1, 0, 'E'), c = put(w, 'belt', 2, 0, 'E');
+  const lines = buildBeltLines(w, simReg);
+  eq(lines.length, 1);
+  eq(lines[0].ids, [a.id, b.id, c.id]);
+  eq(lines[0].ring, false);
+});
+test('ベルトは1秒に1マス運ぶ', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E'); put(w, 'belt', 1, 0, 'E'); put(w, 'belt', 2, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 5);
+  for (let i = 0; i < 19; i++) sim.step();
+  eq(total(sim.contentsAt(0, 0).belt), 5, '1秒たたないうちに動いた');
+  sim.step();
+  eq(total(sim.contentsAt(1, 0).belt), 5, '1秒で1マス進んでいない');
+  run(sim, 1);
+  eq(total(sim.contentsAt(2, 0).belt), 5);
+});
+test('ベルトの先に何も無ければ床に落ちる', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  run(sim, 1);
+  eq(total(sim.contentsAt(0, 0).belt), 0);
+  eq(total(sim.contentsAt(1, 0).ground), 3);
+});
+test('ベルトの先が保管箱でも中には入らず、そのマスの床に落ちる', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E'); put(w, 'chest', 1, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  run(sim, 1);
+  const c = sim.contentsAt(1, 0);
+  eq(total(c.container.slots.filter(Boolean)), 0, '箱に入ってしまった');
+  eq(total(c.ground), 3);
+});
+test('床では同じ種類が1つの山にまとまる', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3); run(sim, 1);
+  sim.addItems(0, 0, 'ore', 4); run(sim, 1);
+  eq(sim.contentsAt(1, 0).ground, [{ item: 'ore', count: 7 }]);
+});
+test('ベルトの上ではスタックが合体しない', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E'); put(w, 'belt', 1, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3); sim.addItems(0, 0, 'ore', 4);
+  run(sim, 1);
+  eq(sim.contentsAt(1, 0).belt, [{ item: 'ore', count: 3 }, { item: 'ore', count: 4 }]);
+});
+test('onBlocked が stop のベルトは先で止まって溜まる', () => {
+  const w = simWorld();
+  put(w, 'stopBelt', 0, 0, 'E'); put(w, 'stopBelt', 1, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 2); run(sim, 1);
+  sim.addItems(0, 0, 'ore', 3); run(sim, 3);
+  eq(total(sim.contentsAt(1, 0).belt), 5);
+  eq(sim.contentsAt(2, 0).ground, []);
+});
+test('盤面の外へは送らない', () => {
+  const w = simWorld(2, 1);
+  put(w, 'belt', 1, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 0, 'ore', 2); run(sim, 2);
+  eq(total(sim.contentsAt(1, 0).belt), 2);
+});
+test('横から合流したベルトの物も先へ流れる', () => {
+  const w = simWorld(5, 5);
+  put(w, 'belt', 0, 2, 'E'); put(w, 'belt', 1, 2, 'E'); put(w, 'belt', 2, 2, 'E');
+  put(w, 'belt', 1, 1, 'S');                     // (1,1) から下の (1,2) へ合流
+  const sim = new Sim(w, simReg);
+  eq(sim.beltLines.length, 3, '合流点で線が切れていない');
+  sim.addItems(0, 2, 'ore', 1); sim.addItems(1, 1, 'plate', 1);
+  run(sim, 1);
+  eq(total(sim.contentsAt(1, 2).belt), 2);
+  run(sim, 1);
+  eq(total(sim.contentsAt(2, 2).belt), 2);
+});
+test('輪になったベルトは回り続ける', () => {
+  const w = simWorld(2, 2);
+  put(w, 'belt', 0, 0, 'E'); put(w, 'belt', 1, 0, 'S'); put(w, 'belt', 1, 1, 'W'); put(w, 'belt', 0, 1, 'N');
+  const sim = new Sim(w, simReg);
+  eq(sim.beltLines.length, 1); eq(sim.beltLines[0].ring, true);
+  sim.addItems(0, 0, 'ore', 1);
+  run(sim, 1); eq(total(sim.contentsAt(1, 0).belt), 1);
+  run(sim, 3); eq(total(sim.contentsAt(0, 0).belt), 1, '一周して戻っていない');
+});
+test('アームは正面から1スタック取り、背面へ置く', () => {
+  const w = simWorld();
+  put(w, 'chest', 0, 0); put(w, 'inserter', 1, 0, 'W'); put(w, 'chest', 2, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 15);                 // 10 + 5 の2スタック
+  run(sim, 1);
+  eq(total(sim.contentsAt(2, 0).container.slots.filter(Boolean)), 10, '1スタック丸ごと運んでいない');
+  run(sim, 1);
+  eq(total(sim.contentsAt(2, 0).container.slots.filter(Boolean)), 15);
+});
+test('アームは置き先に入りきらない分を置き先の床に落とす', () => {
+  const w = simWorld();
+  put(w, 'chest', 0, 0); put(w, 'inserter', 1, 0, 'W'); put(w, 'chest', 2, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(2, 0, 'plate', 10); sim.addItems(2, 0, 'plate', 8);   // 置き先: 2枠のうち 10 と 8
+  sim.addItems(0, 0, 'ore', 6);
+  run(sim, 1);
+  eq(sim.contentsAt(2, 0).ground, [{ item: 'ore', count: 6 }]);
+});
+test('アームは床の物も拾う', () => {
+  const w = simWorld();
+  put(w, 'inserter', 1, 0, 'W'); put(w, 'chest', 2, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 4);                  // (0,0) は空きマス → 床
+  run(sim, 1);
+  eq(sim.contentsAt(0, 0).ground, []);
+  eq(total(sim.contentsAt(2, 0).container.slots.filter(Boolean)), 4);
+});
+test('箱 → アーム → ベルト → 床 → アーム → 箱 で全部運べる', () => {
+  const w = simWorld();
+  put(w, 'chest', 0, 0); put(w, 'inserter', 1, 0, 'W');
+  put(w, 'belt', 2, 0, 'E'); put(w, 'belt', 3, 0, 'E');   // (4,0) の床へ落ちる
+  put(w, 'inserter', 5, 0, 'W'); put(w, 'chest', 6, 0);
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 20);
+  run(sim, 10);
+  const t = sim.totals();
+  eq(total(sim.contentsAt(6, 0).container.slots.filter(Boolean)), 20, `途中に残っている ${JSON.stringify(t)}`);
+  eq(t.onBelts + t.onGround, 0);
+});
+test('ベルトを撤去すると載っていた物はそのマスの床に落ちる', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  removeAt(w, 0, 0);
+  eq(total(sim.contentsAt(0, 0).ground), 3);
+});
+test('回しても中身は消えない', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  rotateAt(w, simReg, 0, 0);
+  eq(total(sim.contentsAt(0, 0).belt), 3);
+  eq(sim.contentsAt(0, 0).ground, []);
+});
+test('中身ごと保存して読み戻せる', () => {
+  const w = simWorld();
+  put(w, 'chest', 0, 0); put(w, 'belt', 2, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 12); sim.addItems(2, 0, 'plate', 3); sim.addItems(5, 1, 'ore', 2);
+  run(sim, 1);
+  const saved = JSON.parse(JSON.stringify({ world: w, sim }));
+  const w2 = World.fromJSON(saved.world, simReg);
+  const back = Sim.fromJSON(saved.sim, w2, simReg);
+  eq(back.tick, 20);
+  eq(back.totals(), sim.totals());
+  eq(back.contentsAt(0, 0).container.slots, sim.contentsAt(0, 0).container.slots);
+  eq(back.contentsAt(5, 1).ground, [{ item: 'ore', count: 2 }]);
+});
+
 /* ---- registry（データを実際に読む） ---- */
 const reg = await Registry.load('data');
 test('data/ を読める', () => {
@@ -145,6 +334,11 @@ test('data/ を読める', () => {
 });
 test('データの整合が取れている', () => {
   eq(reg.problems, [], `データに問題: ${reg.problems.join(' / ')}`);
+});
+test('ベルト・アーム・保管箱の挙動が data に書いてある', () => {
+  ok(reg.building('belt').belt, 'belt に belt の定義が無い');
+  ok(reg.building('inserter').inserter, 'inserter に inserter の定義が無い');
+  ok(reg.building('chest').container, 'chest に container の定義が無い');
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {

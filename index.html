@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>工業シミュレーション基盤 — Phase 1</title>
+<title>工業シミュレーション基盤 — Phase 2</title>
 <style>
   :root{
     --bg:#0f1117; --panel:#161a23; --panel2:#1d222d; --line:#2a3140;
@@ -21,6 +21,7 @@
   main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
   .bar{display:flex;gap:8px;align-items:center;padding:8px 12px;
        border-bottom:1px solid var(--line);background:var(--panel)}
+  select{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit}
   button{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
          border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit}
   button:hover{border-color:#4a5568}
@@ -34,14 +35,16 @@
   .pal .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pal .sz{color:var(--muted);font-size:11px}
   .hint{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.8}
-  #status{color:var(--muted);font-size:12.5px;margin-left:auto;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar > *{flex:none;white-space:nowrap}
+  /* 長い文が入っても1行のまま（バーの高さが変わると盤面がずれる） */
+  #status{color:var(--muted);font-size:12.5px;margin-left:auto;flex:1 1 0;min-width:0;
+          text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
 <header>
   <h1>工業シミュレーション基盤</h1>
-  <span class="sub">Phase 1 — Grid / Building / Item / Placement</span>
+  <span class="sub">Phase 2 — Belt / Inserter / アイテム搬送</span>
 </header>
 
 <div class="wrap">
@@ -53,14 +56,24 @@
       R: 回転（カーソルの下 / 選択中の向き）<br>
       ホイール: 拡大縮小<br>
       Shift + ドラッグ: 画面を動かす<br>
-      Esc: 選択を解除
+      Esc: 選択を解除<br>
+      何も選ばずにクリック: 中身を見る<br>
+      <br>
+      ■ ベルト上 / ■ 保管箱の中 / ● 床（赤枠）<br>
+      ベルトの先が行き止まりだと床に落ちます。<br>
+      アームは正面から取り、背面へ置きます。
     </div>
   </aside>
 
   <main>
     <div class="bar">
+      <button id="btnPlay">▶ 再生</button>
+      <button id="btnTick">1 tick</button>
+      <button id="btnSec">1 秒</button>
+      <span class="sub" id="clock">0.00 秒（0 tick）</span>
       <button id="btnRotate">回転 (R)</button>
       <button id="btnClear">全消去</button>
+      <select id="itemSel" title="「アイテムを置く」で置く種類"></select>
       <span class="sub">建物 <b id="count">0</b></span>
       <span id="status">読み込み中…</span>
     </div>

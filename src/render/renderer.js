@@ -54,7 +54,8 @@ export class Renderer {
     this.viewport = { width: r.width, height: r.height };
   }
 
-  draw(world) {
+  /** sim を渡すと、ベルト・箱・床の中身も描く（読むだけ）。 */
+  draw(world, sim = null) {
     const ctx = this.ctx;
     const { width: vw, height: vh } = this.viewport;
     ctx.clearRect(0, 0, vw, vh);
@@ -92,14 +93,16 @@ export class Renderer {
     world.forEach(bld => {
       const size = rotatedSize(bld.size, bld.dir);
       if (bld.x + size.width < x0 || bld.x > x1 || bld.y + size.height < y0 || bld.y > y1) return;
-      this.drawBuilding(bld, size);
+      this.drawBuilding(bld, size, sim);
     });
+
+    if (sim) this.drawItems(world, sim, { x0, y0, x1, y1 });
 
     if (this.ghost) this.drawGhost(this.ghost);
     if (this.hover) this.drawHover(this.hover);
   }
 
-  drawBuilding(bld, size) {
+  drawBuilding(bld, size, sim) {
     const ctx = this.ctx, t = this.tile;
     const def = this.registry.building(bld.type) || {};
     const { px, py } = this.toScreen(bld.x, bld.y);
@@ -107,7 +110,8 @@ export class Renderer {
 
     ctx.fillStyle = def.color || '#64748b';
     ctx.fillRect(px + 1, py + 1, w - 2, h - 2);
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    const busy = sim && sim.busy.has(bld.id);       // このtickに動いたアーム
+    ctx.strokeStyle = busy ? '#fbbf24' : 'rgba(0,0,0,0.45)';
     ctx.lineWidth = 2;
     ctx.strokeRect(px + 1, py + 1, w - 2, h - 2);
 
@@ -126,6 +130,55 @@ export class Renderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(def.name[0], px + w / 2, py + h / 2 + 1);
+    }
+  }
+
+  /** ベルトの上・箱の中・床のアイテムを描く。1マスにつき先頭の種類の色と合計数。 */
+  drawItems(world, sim, { x0, y0, x1, y1 }) {
+    const visible = (x, y) => x >= x0 - 1 && x <= x1 && y >= y0 - 1 && y <= y1;
+    for (const [id, list] of sim.belts) {
+      const b = world.buildings.get(id);
+      if (!b || !list.length || !visible(b.x, b.y)) continue;
+      this.drawStack(b.x, b.y, list, 'belt');
+    }
+    for (const [id, ch] of sim.containers) {
+      const b = world.buildings.get(id);
+      const list = ch.slots.filter(Boolean);
+      if (!b || !list.length || !visible(b.x, b.y)) continue;
+      this.drawStack(b.x, b.y, list, 'container');
+    }
+    for (const [k, list] of sim.ground) {
+      if (!list.length) continue;
+      const [x, y] = k.split(',').map(Number);
+      if (!visible(x, y)) continue;
+      this.drawStack(x, y, list, 'ground');
+    }
+  }
+
+  drawStack(x, y, list, where) {
+    const ctx = this.ctx, t = this.tile;
+    const { px, py } = this.toScreen(x, y);
+    const item = this.registry.item(list[0].item) || {};
+    const n = list.reduce((a, s) => a + s.count, 0);
+    const r = t * 0.2;
+    // 床は左下、ベルトは中央、箱は右下に小さく
+    const cx = where === 'ground' ? px + t * 0.28 : where === 'container' ? px + t * 0.72 : px + t / 2;
+    const cy = where === 'belt' ? py + t / 2 : py + t * 0.72;
+    ctx.fillStyle = item.color || '#e5e7eb';
+    ctx.strokeStyle = where === 'ground' ? '#f87171' : '#0b0e15';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (where === 'ground') ctx.arc(cx, cy, r, 0, 7);
+    else ctx.rect(cx - r, cy - r, r * 2, r * 2);
+    ctx.fill(); ctx.stroke();
+    if (t >= 18) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 ${Math.round(t * 0.3)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#0b0e15';
+      ctx.strokeText(String(n), cx, cy - r + 1);
+      ctx.fillText(String(n), cx, cy - r + 1);
     }
   }
 
