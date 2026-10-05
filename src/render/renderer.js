@@ -58,6 +58,15 @@ export class Renderer {
     this.viewport = { width: r.width, height: r.height };
   }
 
+  /** 画面に映っているマスの範囲（両端を含む）。盤面の外も含む。 */
+  visibleRect() {
+    const { width: vw, height: vh } = this.viewport, t = this.tile;
+    return {
+      x0: Math.floor(this.origin.x), y0: Math.floor(this.origin.y),
+      x1: Math.ceil(this.origin.x + vw / t), y1: Math.ceil(this.origin.y + vh / t),
+    };
+  }
+
   /** sim を渡すと、ベルト・箱・床の中身も描く（読むだけ）。 */
   draw(world, sim = null) {
     const ctx = this.ctx;

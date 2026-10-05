@@ -19,11 +19,11 @@
 <body>
 <h1>速さの測定</h1>
 <div class="sub">採掘機 → ベルト → アーム → 炉 → アーム → 箱 と発電機・電線の列（建物26個）を盤面いっぱいに敷き詰めて測る。
-数字はこのPCとブラウザでの値（ms = 1000分の1秒）。</div>
+数字はこのPCとブラウザでの値（ms = 1000分の1秒）。<br>「画面が止まる最長」は、再生中の画面の更新の間隔の最大（60コマ/秒なら約17 ms）。「始めの3秒 / その後の2秒」の順。始めの3秒には、建物を大量に置いた分の計算が入る。</div>
 <label>盤面 <select id="size"><option>64</option><option selected>256</option><option>512</option></select></label>
 <button id="run">測る</button>
 <span id="msg"></span>
-<table id="out"><tr><th>盤面</th><th>建物</th><th>最初の計算</th><th>1 tick</th><th>1つ置く・消す</th><th>1コマ描く</th></tr></table>
+<table id="out"><tr><th>盤面</th><th>建物</th><th>最初の計算</th><th>1 tick</th><th>1つ置く・消す</th><th>1コマ描く</th><th>再生中に画面が止まる最長<br>（同じスレッド）</th><th>同左<br>（Worker）</th></tr></table>
 <canvas id="board"></canvas>
 <script type="module" src="src/bench.js"></script>
 </body>

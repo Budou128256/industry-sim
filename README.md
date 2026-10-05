@@ -3,7 +3,7 @@
 ブラウザで動く、汎用の工業シミュレーション基盤。
 特定のゲームの複製ではなく、**データ（`data/` の JSON）を足すだけで中身が増える土台**を作ることが目的。
 
-段階的に作っており、現在は **Phase 5a（チャンク・差分の計算）** まで。
+段階的に作っており、現在は **Phase 5（チャンク・差分の計算・Web Worker）** まで。
 進行状況と次にやることは [PLAN.md](PLAN.md)、設計の約束は [ARCHITECTURE.md](ARCHITECTURE.md) にあります。
 
 ## 動かす
@@ -58,8 +58,15 @@ src/
     inventory.js  保管箱のスロットとスタックの列
     machine.js    加工機（炉）。レシピで原料を製品に変える
     miner.js      採掘機。正面の鉱脈を掘って背面へ出す
+    snapshot.js   画面に映る範囲の写し（Worker から画面へ送る）
     power.js      電力。発電機から電線・機械をたどって届く範囲
-  render/         World を読んで描くだけ
+  worker/
+    worker.js     Web Worker の入口。ここで World と Sim を動かす
+    engine.js     World と Sim を持ち、画面からの命令を実行して時間を進める
+  client.js       画面から Engine を呼ぶ窓口（Worker が使えなければ同じスレッドで動かす）
+  render/         World（の写し）を読んで描くだけ
+    renderer.js   Canvas に描く
+    view.js       Worker から届いた写しを World / Sim と同じ形に戻す
   input/          入力をコマンドに変えるだけ（World は触らない）
   app.js          上記をつなぐ唯一の層
   tests.js        core の自動テスト
@@ -75,8 +82,8 @@ src/
 
 ## テスト
 
-Node が無いのでブラウザで走らせます。`tests.html` を開くと core のテスト（63 件）が走ります。
+Node が無いのでブラウザで走らせます。`tests.html` を開くと core のテスト（65 件）が走ります。
 
 ## 予定
 
-Phase 5b で Web Worker、Phase 6 で保存へ進みます。液体・保管の拡張は未定です。
+Phase 6 で保存・読込へ進みます。液体・保管の拡張は未定です。
