@@ -11,10 +11,10 @@
 
 | 項目 | 状態 |
 |---|---|
-| 段階 | **Phase 0（準備・合意形成）** |
+| 段階 | **Phase 1（Grid / Building / Item / Placement）着手** |
 | 置き場所 | `Desktop/drive-download-20260614T075216Z-3-001/my-application/`（**git 管理下**・ブランチ main） |
-| 済んだこと | 環境調査 / 既存コードの分類 / **git init と最初のコミット** |
-| 次の作業 | 下の「決定待ち」を埋める。**実装は未着手** |
+| 済んだこと | 環境調査 / 既存コードの分類 / git init / **Phase 0 完了（決定事項の確定と ARCHITECTURE.md）** |
+| 次の作業 | Phase 1 の実装（下の「次にやること」） |
 
 ---
 
@@ -30,23 +30,22 @@
 
 ---
 
-## 決定待ち（これが決まるまで実装に入らない）
+## 決定事項（2026-10-05 すべて確定）
 
-1. **TypeScript を使うか**
-   - A: Node.js を入れてもらう（本人が nodejs.org の LTS を入れる。私からは入れない）
-   - B: 素のJS + ES モジュールで、**構造だけ指示書どおり**にする（ビルド不要・今すぐ動く）
-2. **Django をいま入れるか**（Phase 6 まで不要という理解で合っているか）
-3. ~~**作る場所**~~ → **決定: `my-application/` に新規作成**（2026-10-05）。
-   残る判断: 既存の `../corekeeper_layout/`（Core Keeper ツール）を
-   - A: このリポジトリの下へ移してアプリ層として扱う
-   - B: いまの場所に置いたまま、資産として参照するだけにする
-4. **いまの Core Keeper 機能（探索・パターン集・MECHANICS・シミュレータ）を維持したまま進めるか**
+| 項目 | 決定 |
+|---|---|
+| 言語 | **素のJavaScript（ESモジュール）**。Node が無く TS をビルドできないため。構造は指示書どおり |
+| Django | **Phase 6 まで後回し**（指示書どおり） |
+| 置き場所 | **`my-application/`**（git 管理下・ブランチ main） |
+| 既存ツール | `../corekeeper_layout/` は**今の場所のまま・機能も維持**。移動も削除もしない |
+
+詳しい責務の分担は [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ---
 
 ## 段階（指示書の Phase に対応）
 
-- [ ] **Phase 0** 準備: ~~git init~~ ✓ / 責務分離の設計メモ / 決定事項の確定
+- [x] **Phase 0** 準備: git init ✓ / 責務分離の設計メモ（ARCHITECTURE.md）✓ / 決定事項の確定 ✓
 - [ ] **Phase 1** Grid / Building / Item / Placement（データ駆動の core を切り出す）
 - [ ] **Phase 2** Belt / Item transportation / Inserter
 - [ ] **Phase 3** Recipe / Machine / Production
@@ -93,11 +92,15 @@
 
 ## 次にやること（次セッションの開始手順）
 
-1. この `PLAN.md` を読む
-2. 「決定待ち」の4点をユーザーに確認する（未確定なら実装に入らない）
-3. 決まったら Phase 0 の残りを実施:
-   - `core/` と `apps/corekeeper/` の責務分離メモを書く（コードはまだ動かさない）
-4. 各段階の終わりに、この表の「現在の状態」と段階チェックを更新する
+1. この `PLAN.md` と [ARCHITECTURE.md](ARCHITECTURE.md) を読む
+2. Phase 1 を実装する:
+   - `data/items/*.json` `data/buildings/*.json`（まずは数個）
+   - `src/core/`（registry / grid / world / placement）
+   - `src/render/renderer.js`（Canvasにグリッドと建物を描く）
+   - `src/input/input.js`（設置・撤去・回転・連続設置）
+   - `index.html` と `serve.py`（`py -3 serve.py` で開く）
+3. ブラウザで動かして確認し、簡易テスト（`src/tests.js`）を通す
+4. この表の「現在の状態」と段階チェックを更新してコミットする
 
 ## 関連
 
