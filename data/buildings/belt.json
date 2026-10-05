@@ -10,5 +10,9 @@
   "tags": [
     "logistics"
   ],
-  "note": "アイテムを運ぶ（Phase 2 で実装）"
+  "note": "アイテムを1マス/秒で運ぶ。先がベルトでなければ、そのマスの床に落とす",
+  "belt": {
+    "tilesPerSecond": 1,
+    "onBlocked": "drop"
+  }
 }

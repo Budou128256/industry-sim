@@ -10,5 +10,8 @@
   "tags": [
     "storage"
   ],
-  "note": "アイテムを貯める"
+  "note": "アイテムを貯める",
+  "container": {
+    "slots": 18
+  }
 }

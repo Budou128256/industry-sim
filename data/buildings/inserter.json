@@ -10,5 +10,9 @@
   "tags": [
     "logistics"
   ],
-  "note": "正面から取り背面へ置く（Phase 2 で実装）"
+  "note": "正面のマスから1スタック取り、背面のマスへ置く。入りきらない分は背面の床に落とす",
+  "inserter": {
+    "periodSeconds": 1,
+    "amount": "stack"
+  }
 }

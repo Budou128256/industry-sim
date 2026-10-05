@@ -26,7 +26,11 @@ my-application/
     │   ├─ registry.js   データの読み込みと id 引き
     │   ├─ grid.js       座標・近傍・範囲（後で Chunk に拡張する）
     │   ├─ world.js      World（grid + buildings）。状態の持ち主
-    │   └─ placement.js  置ける/置けないの判定、設置・撤去・回転
+    │   ├─ placement.js  置ける/置けないの判定、設置・撤去・回転
+    │   ├─ sim.js        時間と中身（ベルト・箱・床）。World の変更には sync() で追いつく
+    │   ├─ belt.js       ベルトの線
+    │   ├─ inserter.js   アーム
+    │   └─ inventory.js  スロットとスタックの列
     ├─ render/
     │   └─ renderer.js   World を**読むだけ**。Canvas に描く
     ├─ input/
