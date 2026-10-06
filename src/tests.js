@@ -21,6 +21,7 @@ import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/
 import { stackLimit } from './core/inventory.js';
 import { toggleLever } from './core/signal.js';
 import { generateCircuits } from './core/circuitgen.js';
+import { generateLines, lineRecipes } from './core/linegen.js';
 
 const results = [];
 function test(name, fn) {
@@ -1468,6 +1469,78 @@ test('回路の自動生成: 条件どおりに動く配置だけを、面積の
 test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ（入力2つ＋発電機）で組む', () => {
   const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
   eq(c.blueprint.buildings.filter(b => b.type === 'logic-circuit').length, 1);
+});
+test('回路の自動生成: 1か所でしか使わないレバーは回路の口へ直接置き、線を延ばさない', () => {
+  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機3つ・出力の電線1つ。左端にレバーを並べていた頃は 8×5=40 だった
+  const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
+  ok(c.area <= 16, `面積 ${c.area}`);
+  eq(c.blueprint.buildings.filter(b => b.type === 'wire').length, 1);
+  const b = c.blueprint.buildings.find(x => x.x === c.output.x && x.y === c.output.y);
+  eq(b && b.type, 'wire', '出力は回路の正面の電線');
+});
+/** 生産ラインの設計図を貼って動かし、出口の箱に入った製品の数（WARMUP 秒後から MEASURE 秒間）を返す。 */
+function runLine(c, input, recipe, warm = 60, measure = 100) {
+  const w = new World({ width: c.width + 4, height: c.height + 4 });
+  const r = pasteBlueprint(w, reg, c.blueprint, 2, 2);
+  eq(r.skipped, 0);
+  const sim = new Sim(w, reg);
+  for (const p of c.inputs) sim.addItems(p.x + 2, p.y + 2, input, 200);
+  const outs = Object.keys(reg.recipe(recipe).outputs);
+  const count = () => c.outputs.reduce((a, p) => {
+    const box = w.at(p.x + 2, p.y + 2);
+    return a + sim.containers.get(box.id).slots.filter(s => s && outs.includes(s.item)).reduce((n, s) => n + s.count, 0);
+  }, 0);
+  for (let i = 0; i < warm; i++) sim.stepSecond();
+  const c0 = count();
+  for (let i = 0; i < measure; i++) sim.stepSecond();
+  eq(sim.unpowered.size, 0, '電気が届いていない建物がある');
+  return count() - c0;
+}
+test('機械の自動配置: 鉱脈から・箱から、どの候補も貼ると目標どおりに作る。面積の小さい順', () => {
+  for (const source of ['ore', 'chest']) {
+    const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 4, source, drill: 'miner' });
+    ok(res.candidates.length >= 2, `${source} の候補が少ない`);
+    eq(res.target, 24);                                   // 炉4台 × 10秒に1個 = 毎分24個
+    for (let i = 1; i < res.candidates.length; i++) {
+      const a = res.candidates[i - 1], b = res.candidates[i];
+      ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
+    }
+    for (const c of res.candidates) {
+      if (source === 'ore') ok(c.blueprint.resources && c.blueprint.resources.length === c.drills, '鉱脈が設計図に無い');
+      const made = runLine(c, 'iron-ore', 'iron-plate');
+      ok(made >= 36, `${source} ${c.patternName}: 100秒で ${made} 個`);   // 目標 40 個の 9 割
+    }
+  }
+});
+test('機械の自動配置: スプリッターで配る型は、機械ごとにドリルを付ける型よりドリルが少ない', () => {
+  const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 8, source: 'ore', drill: 'miner' });
+  const tree = res.candidates.find(c => c.pattern === 'tree'), own = res.candidates.find(c => c.pattern === 'own');
+  ok(tree && own);
+  eq(own.drills, 8);
+  eq(tree.drills, 2);                                     // 採掘機は2秒に1個、炉8台で毎秒0.8個 → 2台
+});
+test('機械の自動配置: 製品が何種類もある粉砕機・電気を使う製材機も組める。材料が鉱脈でない物は掘れない', () => {
+  const list = lineRecipes(reg);
+  ok(list.find(r => r.id === 'iron-plate').ore);
+  ok(!list.find(r => r.id === 'plank').ore);
+  for (const [recipe, machine, input] of [['scrap-a', 'shredder', 'scrap-a'], ['plank', 'table-saw', 'wood']]) {
+    const res = generateLines(reg, { recipe, machine, count: 3, source: 'chest' });
+    ok(res.candidates.length > 0, `${recipe} の候補が無い`);
+    const c = res.candidates[0];
+    const perCycle = Object.values(reg.recipe(recipe).outputs).reduce((a, v) => a + v, 0);
+    ok(runLine(c, input, recipe) >= 3 * perCycle * 10 * 0.9, `${recipe} の出来高が足りない`);
+  }
+});
+test('設計図の鉱脈: 回す・反転に付いてきて、貼ると鉱脈も置く', () => {
+  const bp = { format: 'industry-sim-blueprint', version: 1, name: '', width: 3, height: 2,
+    buildings: [{ type: 'miner', x: 0, y: 1, dir: 'N' }], resources: [{ x: 0, y: 0, item: 'iron-ore' }] };
+  const r = rotateBlueprint(bp, reg);                       // 時計回り: (0,0) → (H-1-0, 0) = (1, 0)
+  eq(r.resources, [{ x: 1, y: 0, item: 'iron-ore' }]);
+  eq(r.buildings[0], { type: 'miner', x: 0, y: 0, dir: 'E' });
+  eq(flipBlueprint(bp, reg, 'h').resources, [{ x: 2, y: 0, item: 'iron-ore' }]);
+  const w = new World({ width: 6, height: 6 });
+  eq(pasteBlueprint(w, reg, bp, 2, 2).ores, 1);
+  eq(w.resourceAt(2, 2), 'iron-ore');
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {

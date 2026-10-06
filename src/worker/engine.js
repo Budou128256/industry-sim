@@ -16,6 +16,7 @@ import { checkSize, countOutside, loadSave, makeSave, resizeSave } from '../core
 import { key } from '../core/grid.js';
 import { toggleLever } from '../core/signal.js';
 import { generateCircuits } from '../core/circuitgen.js';
+import { generateLines } from '../core/linegen.js';
 import { buildingsInside, captureBlueprint, checkBlueprint, moveArea, pasteBlueprint } from '../core/blueprint.js';
 import { History, applyEntry } from '../core/history.js';
 
@@ -172,6 +173,11 @@ export class Engine {
   /** 回路の自動生成。table は長さ 2^n の真偽の並び（A が上の桁）。盤面は変えない。 */
   op_genCircuit({ n, table }) {
     return generateCircuits(this.registry, n, table);
+  }
+
+  /** 機械の自動配置（生産ライン）。盤面は変えない。 */
+  op_genLine(opts) {
+    return generateLines(this.registry, opts);
   }
 
   op_items({ x, y, item, count }) {

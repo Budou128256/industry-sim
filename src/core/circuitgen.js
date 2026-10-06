@@ -240,6 +240,33 @@ export const PATTERNS = [
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
+/** 迷路探索の待ち行列（距離 d が小さい順、同じなら入れた順 s）。 */
+class MinHeap {
+  constructor() { this.a = []; }
+  get size() { return this.a.length; }
+  less(i, j) { const p = this.a[i], q = this.a[j]; return p.d < q.d || (p.d === q.d && p.s < q.s); }
+  swap(i, j) { const t = this.a[i]; this.a[i] = this.a[j]; this.a[j] = t; }
+  push(v) {
+    const a = this.a; a.push(v);
+    for (let i = a.length - 1; i > 0; ) { const p = (i - 1) >> 1; if (!this.less(i, p)) break; this.swap(i, p); i = p; }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last;
+      for (let i = 0; ; ) {
+        const l = 2 * i + 1, r = l + 1;
+        let m = i;
+        if (l < a.length && this.less(l, m)) m = l;
+        if (r < a.length && this.less(r, m)) m = r;
+        if (m === i) break;
+        this.swap(i, m); i = m;
+      }
+    }
+    return top;
+  }
+}
+
 class Layout {
   constructor(width, height) {
     this.W = width; this.H = height;
@@ -294,18 +321,17 @@ class Layout {
   /** 線 n を、すでにつないだマス（tree）から target まで迷路探索でつなぐ。 */
   route(n, tree, target) {
     const dist = new Map(), prev = new Map();
-    const heap = [];
+    const heap = new MinHeap();
+    let seq = 0;                                   // 同じ距離なら先に入れた方から（前と同じ結果にする）
     const push = (k, x, y, d, from, cross) => {
       if (dist.has(k) && dist.get(k) <= d) return;
       dist.set(k, d); prev.set(k, { from, cross, x, y });
-      heap.push({ k, x, y, d });
+      heap.push({ k, x, y, d, s: seq++ });
     };
     for (const c of tree) push(key(c.x, c.y), c.x, c.y, 0, null, null);
     const tk = key(target.x, target.y);
-    while (heap.length) {
-      let bi = 0;
-      for (let i = 1; i < heap.length; i++) if (heap[i].d < heap[bi].d) bi = i;
-      const cur = heap.splice(bi, 1)[0];
+    while (heap.size) {
+      const cur = heap.pop();
       if (cur.d > dist.get(cur.k)) continue;
       if (cur.k === tk) break;
       for (const [dx, dy] of DIRS4) {
@@ -336,7 +362,7 @@ class Layout {
 }
 
 /** 型 pattern で並べてつなぐ。できなければ null。 */
-function layoutCircuit(n, root, pattern, boost = false, perm = null) {
+function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = false, nearOut = true) {
   if (!root) return null;
   const always = root.kind === 'always';
   const { gates, out } = always ? { gates: [], out: 'out' } : netlist(n, root, boost);
@@ -423,16 +449,50 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null) {
     });
   });
   if (gates.some(g => g.bad || !g.at)) return null;
+  // direct: 1か所でしか使わないレバーは、左端に並べずに回路の口へ直接置く（その外側に発電機）。線が要らない
+  let moved = 0;
+  if (direct) {
+    for (let i = 0; i < n; i++) {
+      const net = `in${i}`;
+      const list = pins[net] || [];
+      if (list.length !== 1) continue;
+      const p = list[0];
+      const g = gates.find(gg => Math.abs(gg.at.x - p.x) + Math.abs(gg.at.y - p.y) === 1);
+      if (!g) continue;
+      const gx = p.x * 2 - g.at.x, gy = p.y * 2 - g.at.y;            // 回路から見て口の向こう側
+      const around = c => DIRS4.map(([dx, dy]) => ({ x: c.x + dx, y: c.y + dy }));
+      const okNb = (c, skip) => around(c).every(q => skip.some(s => s.x === q.x && s.y === q.y) || !L.get(q.x, q.y) || L.get(q.x, q.y).t === 'res');
+      if (!L.free(gx, gy)) continue;
+      if (!okNb(p, [g.at, { x: gx, y: gy }]) || !okNb({ x: gx, y: gy }, [p])) continue;
+      // 左端のレバーと発電機を外す
+      const src = sources[net];
+      const li = L.parts.findIndex(q => q.type === 'lever' && q.input === i);
+      L.parts.splice(li, 1);
+      const gi = L.parts.findIndex(q => q.type === 'generator' && q.x === 0 && q.y === src.y);
+      L.parts.splice(gi, 1);
+      for (const [x, yy] of [[0, src.y], [1, src.y], [0, src.y - 1], [0, src.y + 1], [1, src.y - 1], [1, src.y + 1]]) L.occ.delete(key(x, yy));
+      delete sources[net]; delete pins[net];
+      L.set(p.x, p.y, { t: 'lever', n: net }); L.parts.push({ type: 'lever', x: p.x, y: p.y, dir: 'N', input: i });
+      L.set(gx, gy, { t: 'gen' }); L.parts.push({ type: 'generator', x: gx, y: gy, dir: 'N' });
+      for (const q of [...around(p), ...around({ x: gx, y: gy })]) L.reserve(q.x, q.y);
+      moved++;
+    }
+  }
   // 出力の口（右端）
-  // 出力の口は、いちばん右の回路のすぐ右（遠いと電気が弱まって届かない）
-  const ox = Math.min(W - 2, (gates.length ? Math.max(...gates.map(g => g.at.x)) : 2) + 3), oy = Math.floor(H / 2);
-  if (L.get(ox, oy)) return null;
-  addPin(out, ox, oy);
-  // 線をつなぐ。つなげない線があったら、その線を先にしてやり直す（最大 24 回）
+  // 出力の口は、出力を出す回路の正面のマスそのもの（線を延ばさない。遠いと電気が弱まり、場所も取る）
+  let ox, oy;
+  if (sources[out] && !always && nearOut) ({ x: ox, y: oy } = sources[out]);
+  else {
+    ox = Math.min(W - 2, (gates.length ? Math.max(...gates.map(g => g.at.x)) : 2) + 3); oy = Math.floor(H / 2);
+    if (L.get(ox, oy)) return null;
+    addPin(out, ox, oy);
+  }
+  // 線をつなぐ。つなげない線があったら、その線を先にしてやり直す（最大 6 回。つなげる配置は、ほとんどが 1〜3 回目でつながる。
+  // 型・並び順の違う試しがたくさんあるので、つながらない配置に時間をかけない）
   const base = new Map(L.occ);
   let order = Object.keys(pins).sort((a, b) => (pins[a].length - pins[b].length) || (a < b ? -1 : 1));
   let done = false;
-  for (let attempt = 0; attempt < 24 && !done; attempt++) {
+  for (let attempt = 0; attempt < 6 && !done; attempt++) {
     L.occ = new Map(base);
     let failed = null;
     for (const net of order) {
@@ -449,6 +509,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null) {
     else order = [failed, ...order.filter(x => x !== failed)];
   }
   if (!done) return null;
+  if (L.get(ox, oy) && L.get(ox, oy).t === 'pin') L.set(ox, oy, { t: 'net', n: out });   // 線をつながなかった出力の口も電線にする
   // 建物にする
   const parts = [...L.parts];
   for (let y = 0; y < L.H; y++) {
@@ -459,7 +520,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null) {
       else if (o.t === 'cross') parts.push({ type: 'cross-circuit', x, y, dir: 'N' });
     }
   }
-  return { parts, out: { x: ox, y: oy } };
+  return { parts, out: { x: ox, y: oy }, moved };
 }
 
 /* ---------- 4. 確かめる ---------- */
@@ -508,11 +569,14 @@ export function generateCircuits(registry, n, table) {
   // 型 × 強め直しの有無 × レバーの並び順（入力が3つなら6通り）を全部試す
   const perms = permutations([...Array(n).keys()]);
   const tries = [];
-  for (const boost of [false, true]) for (const p of PATTERNS) for (const perm of perms) tries.push({ pattern: p, boost, perm });
-  tries.forEach(({ pattern, boost, perm }, order) => {
-    const got = layoutCircuit(n, root, pattern, boost, perm);
-    if (!got) return;
-    if (!verifyCircuit(registry, n, table, got.parts, got.out)) return;
+  for (const direct of [true, false]) for (const boost of [false, true]) for (const p of PATTERNS) for (const perm of perms) tries.push({ pattern: p, boost, perm, direct });
+  tries.forEach(({ pattern, boost, perm, direct }, order) => {
+    // 出力の口は回路のすぐ前（線を延ばさない）。つなげなければ、少し先に離してもう一度
+    let got = layoutCircuit(n, root, pattern, boost, perm, direct, true);
+    if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) {
+      got = layoutCircuit(n, root, pattern, boost, perm, direct, false);
+      if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return;
+    }
     // 外接する長方形に詰める
     const x0 = Math.min(...got.parts.map(p => p.x)), y0 = Math.min(...got.parts.map(p => p.y));
     const x1 = Math.max(...got.parts.map(p => p.x)), y1 = Math.max(...got.parts.map(p => p.y));
@@ -526,7 +590,7 @@ export function generateCircuits(registry, n, table) {
     const name = `回路 ${text}（${pattern.name}${boost ? '・強め直し' : ''}）`;
     candidates.push({
       pattern: pattern.id, boost, name, order,
-      patternName: pattern.name + (boost ? '・強め直し' : '') + (perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
+      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
       gates: buildings.filter(b => b.type === 'logic-circuit').length, width, height, area: width * height, count: buildings.length,
       input: got.parts.filter(p => p.type === 'lever').sort((a, b) => a.input - b.input).map(p => ({ x: p.x - x0, y: p.y - y0 })),
       output: { x: got.out.x - x0, y: got.out.y - y0 },

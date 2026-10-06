@@ -66,11 +66,16 @@
   .modal .btns{display:flex;justify-content:flex-end;gap:8px}
   .modal .yes{border-color:#d4b13f}
   .modal .yes.danger{border-color:#f87171;color:#fecaca}
+    .fold > summary { cursor: pointer; list-style: none; }
+    .fold > summary::-webkit-details-marker { display: none; }
+    .fold > summary::before { content: '▸ '; }
+    .fold[open] > summary::before { content: '▾ '; }
     .cg { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; font-size: 12px; }
     .cg table { border-collapse: collapse; }
     .cg td, .cg th { padding: 1px 6px; text-align: center; border-bottom: 1px solid #1f2937; }
     .cg th { color: #94a3b8; font-weight: 600; }
-    .cg .cand { text-align: left; }
+    .cg .cand { text-align: left; flex-wrap: wrap; gap: 2px 8px; }
+    .cg .cand .n { flex: 1 0 100%; white-space: normal; }
     .cg .cand.on { outline: 2px solid #38bdf8; }
 </style>
 </head>
@@ -108,7 +113,8 @@
     <div id="bpList"></div>
     <div class="group">見本（動きの確認用）</div>
     <div id="exList"></div>
-    <div class="group">回路の自動生成</div>
+    <details class="fold" id="cgFold">
+    <summary class="group" title="クリックで開く・閉じる">回路の自動生成</summary>
     <div class="cg">
       <label>入力（レバー）の数 <select id="cgN"><option>1</option><option selected>2</option><option>3</option></select></label>
       <div class="sub">電気を出したい組み合わせに印を付ける</div>
@@ -117,6 +123,20 @@
       <div id="cgText" class="sub"></div>
       <div id="cgList"></div>
     </div>
+    </details>
+    <details class="fold" id="lgFold">
+    <summary class="group" title="クリックで開く・閉じる">機械の自動配置</summary>
+    <div class="cg">
+      <label>作る物 <select id="lgRecipe"></select></label>
+      <label>機械 <select id="lgMachine"></select></label>
+      <label>台数 <input id="lgCount" type="number" min="1" max="16" value="4" style="width:4em"></label>
+      <label>材料 <select id="lgSource"><option value="ore">鉱脈から掘る</option><option value="chest">材料の箱から</option></select></label>
+      <label id="lgDrillRow">ドリル <select id="lgDrill"></select></label>
+      <button id="btnLine" title="型ごとに並べ、発電機と電線までつなぎ、動かして出来高を確かめてから、面積の小さい順に並べる">配置を作る</button>
+      <div id="lgText" class="sub"></div>
+      <div id="lgList"></div>
+    </div>
+    </details>
     <div class="group">画面</div>
     <div class="selbtns">
       <button id="btnFit" title="F / Home">全体を表示 (F)</button>
