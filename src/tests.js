@@ -346,6 +346,39 @@ test('ベルトを撤去すると載っていた物はそのマスの床に落�
   removeAt(w, 0, 0);
   eq(total(sim.contentsAt(0, 0).ground), 3);
 });
+test('床に落ちた物の上にベルトを敷くと、ベルトに載って流れる', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');                     // 行き止まり → (1,0) の床へ落ちる
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  run(sim, 1);
+  eq(total(sim.contentsAt(1, 0).ground), 3);
+  put(w, 'belt', 1, 0, 'E'); put(w, 'belt', 2, 0, 'E');
+  eq(sim.contentsAt(1, 0).ground, [], '床に残っている');
+  eq(total(sim.contentsAt(1, 0).belt), 3);
+  run(sim, 1);
+  eq(total(sim.contentsAt(2, 0).belt), 3, '流れていない');
+  eq(sim.totals().onGround, 0);
+});
+test('ベルトを別の種類に置き換えても、落ちた中身は新しいベルトに載る', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  removeAt(w, 0, 0); put(w, 'stopBelt', 0, 0, 'E');  // 同じ sync の中で撤去と設置
+  eq(sim.contentsAt(0, 0).ground, []);
+  eq(total(sim.contentsAt(0, 0).belt), 3);
+});
+test('保存データでベルトの下に残っていた床の物も、読み込むとベルトに載る', () => {
+  const w = simWorld();
+  put(w, 'belt', 1, 0, 'E');
+  const sim = new Sim(w, simReg);
+  const saved = JSON.parse(JSON.stringify({ world: w, sim }));
+  saved.sim.ground = [{ x: 1, y: 0, stacks: [{ item: 'ore', count: 2 }] }];
+  const back = Sim.fromJSON(saved.sim, World.fromJSON(saved.world, simReg), simReg);
+  eq(back.contentsAt(1, 0).ground, []);
+  eq(total(back.contentsAt(1, 0).belt), 2);
+});
 test('回しても中身は消えない', () => {
   const w = simWorld();
   put(w, 'belt', 0, 0, 'E');
