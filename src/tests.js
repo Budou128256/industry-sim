@@ -15,7 +15,7 @@ import { makeSnapshot } from './core/snapshot.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { wireColors } from './render/renderer.js';
 import { splitStack, splitterAccepts } from './core/splitter.js';
-import { captureBlueprint, checkBlueprint, pasteBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
+import { captureBlueprint, checkBlueprint, flipBlueprint, moveArea, pasteBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
 import { Engine } from './worker/engine.js';
 import { loadSave, makeSave } from './core/save.js';
 
@@ -818,11 +818,11 @@ test('設計図: 貼ると同じ並びになり、重なる・盤面の外の建
   const w = simWorld(20, 10);
   put(w, 'belt', 1, 1, 'E'); put(w, 'belt', 2, 1, 'E'); put(w, 'inserter', 2, 2, 'S');
   const bp = captureBlueprint(w, { x0: 1, y0: 1, x1: 2, y1: 2 });
-  eq(pasteBlueprint(w, simReg, bp, 10, 5), { placed: 3, skipped: 0 });
+  eq(pasteBlueprint(w, simReg, bp, 10, 5), { placed: 3, skipped: 0, replaced: 0, same: 0 });
   eq([w.at(10, 5).dir, w.at(11, 5).type, w.at(11, 6).type], ['E', 'belt', 'inserter']);
   const pv = previewBlueprint(w, simReg, bp, 10, 5);
   ok(pv.every(p => !p.ok), '重なるのに置けると出た');
-  eq(pasteBlueprint(w, simReg, bp, 19, 5), { placed: 1, skipped: 2 }, '盤面の外を飛ばしていない');
+  eq(pasteBlueprint(w, simReg, bp, 19, 5), { placed: 1, skipped: 2, replaced: 0, same: 0 }, '盤面の外を飛ばしていない');
 });
 test('設計図: 回すと時計回りに90度回り、4回で元に戻る（2x2 も）', () => {
   const w = simWorld(20, 10);
@@ -849,12 +849,86 @@ test('エンジン: 範囲をコピーして貼り、範囲を削除する', () 
   const bp = res(2).result;
   eq(bp.buildings.length, 2);
   eng.handle({ id: 3, op: 'paste', blueprint: bp, x: 10, y: 5 });
-  eq(res(3).result, { placed: 2, skipped: 0 });
+  eq(res(3).result, { placed: 2, skipped: 0, replaced: 0, same: 0 });
   eq(eng.world.count, 4);
   eng.handle({ id: 4, op: 'paste', blueprint: { format: 'x' }, x: 0, y: 0 });
   ok(res(4).error, '設計図でないのにエラーにならない');
   eng.handle({ id: 5, op: 'removeArea', rect: { x0: 9, y0: 4, x1: 12, y1: 6 } });
   eq([res(5).result.removed, eng.world.count], [2, 2]);
+});
+
+test('設計図: 左右反転・上下反転で位置と向きが鏡に映り、2回で元に戻る（2x2 も）', () => {
+  const w = simWorld(20, 10);
+  put(w, 'belt', 0, 0, 'E'); put(w, 'smelter', 1, 0); put(w, 'inserter', 3, 1, 'N');   // 4x2 の範囲
+  const bp = captureBlueprint(w, { x0: 0, y0: 0, x1: 3, y1: 1 });
+  const h = flipBlueprint(bp, simReg, 'h');
+  eq([h.width, h.height], [4, 2]);
+  ok(h.buildings.some(b => b.type === 'belt' && b.x === 3 && b.y === 0 && b.dir === 'W'), JSON.stringify(h.buildings));
+  ok(h.buildings.some(b => b.type === 'inserter' && b.x === 0 && b.y === 1 && b.dir === 'N'), JSON.stringify(h.buildings));
+  ok(h.buildings.some(b => b.type === 'smelter' && b.x === 1 && b.y === 0), '2x2 の位置が違う');
+  const v = flipBlueprint(bp, simReg, 'v');
+  ok(v.buildings.some(b => b.type === 'belt' && b.x === 0 && b.y === 1 && b.dir === 'E'), JSON.stringify(v.buildings));
+  ok(v.buildings.some(b => b.type === 'inserter' && b.x === 3 && b.y === 0 && b.dir === 'S'), JSON.stringify(v.buildings));
+  eq(flipBlueprint(h, simReg, 'h').buildings, bp.buildings);
+  eq(flipBlueprint(v, simReg, 'v').buildings, bp.buildings);
+  eq(pasteBlueprint(simWorld(20, 10), simReg, h, 0, 0).skipped, 0, '反転した設計図が重なった');
+});
+test('設計図: 上書きで貼ると重なる建物を撤去して置き、同じ物はそのまま残す', () => {
+  const w = simWorld(20, 10);
+  put(w, 'belt', 1, 1, 'E'); put(w, 'belt', 2, 1, 'E');
+  const bp = captureBlueprint(w, { x0: 1, y0: 1, x1: 2, y1: 1 });
+  const keep = w.at(5, 1) || put(w, 'belt', 5, 1, 'E');     // 同じ物（残る）
+  put(w, 'chest', 6, 1);                                  // 重なる別の物（上書きで消える）
+  const pv = previewBlueprint(w, simReg, bp, 5, 1, { overwrite: true });
+  eq(pv.map(p => p.state), ['same', 'replace']);
+  eq(pv[1].hit.map(b => b.type), ['chest']);
+  eq(previewBlueprint(w, simReg, bp, 5, 1).map(p => p.state), ['same', 'blocked'], '上書きしないのに置ける');
+  eq(pasteBlueprint(w, simReg, bp, 5, 1), { placed: 0, skipped: 1, replaced: 0, same: 1 });
+  eq(pasteBlueprint(w, simReg, bp, 5, 1, { overwrite: true }), { placed: 1, skipped: 0, replaced: 1, same: 1 });
+  eq([w.at(5, 1).id, w.at(6, 1).type, w.at(6, 1).dir], [keep.id, 'belt', 'E']);
+});
+test('まとめて移動: 中身ごと動き、置けない所があれば何も動かさない（上書きなら動く）', () => {
+  const w = simWorld(20, 10);
+  put(w, 'belt', 1, 1, 'E'); put(w, 'chest', 2, 1);
+  put(w, 'chest', 8, 1);                                   // 行き先の邪魔
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 1, 'ore', 3); sim.addItems(2, 1, 'plate', 4);
+  const rect = { x0: 1, y0: 1, x1: 2, y1: 1 };
+  const no = moveArea(w, simReg, rect, [], 7, 1);
+  eq([no.moved, no.blocked], [0, 1]);
+  eq([w.at(1, 1).type, w.at(2, 1).type, w.count], ['belt', 'chest', 3], '置けないのに動いた');
+  // 少しだけずらす（元の場所と重なる移動）
+  const r = moveArea(w, simReg, rect, [], 2, 1);
+  for (const [a, b] of r.moves) sim.moved.set(a, b);
+  eq([r.moved, w.at(1, 1), w.at(2, 1).type, w.at(3, 1).type], [2, null, 'belt', 'chest']);
+  sim.sync();
+  eq(total(sim.contentsAt(2, 1).belt), 3, 'ベルトの上の物が付いてこない');
+  eq(total(sim.contentsAt(3, 1).container.slots.filter(Boolean)), 4, '箱の中身が付いてこない');
+  eq(total(sim.contentsAt(1, 1).ground) + total(sim.contentsAt(2, 1).ground), 0, '床に落ちた');
+  // 上書き: 左右反転して (7,1) へ。邪魔な箱 (8,1) は撤去される
+  const o = moveArea(w, simReg, { x0: 2, y0: 1, x1: 3, y1: 1 }, ['h'], 7, 1, { overwrite: true });
+  for (const [a, b] of o.moves) sim.moved.set(a, b);
+  eq([o.moved, o.replaced, w.at(7, 1).type, w.at(8, 1).type, w.at(8, 1).dir], [2, 1, 'chest', 'belt', 'W']);
+  sim.sync();
+  eq([total(sim.contentsAt(8, 1).belt), total(sim.contentsAt(7, 1).container.slots.filter(Boolean))], [3, 4]);
+});
+test('エンジン: まとめて移動（中身も）と、上書きの貼り付け', () => {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  const res = id => sent.find(m => m.re === id);
+  eng.handle({ id: 1, op: 'place', type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 2, y: 1, dir: 'E' }] });
+  eng.sim.sync();
+  eng.sim.addItems(1, 1, 'ore', 2);
+  eng.handle({ id: 2, op: 'move', rect: { x0: 1, y0: 1, x1: 2, y1: 1 }, transforms: ['r'], x: 5, y: 5 });
+  eq(res(2).result, { moved: 2, replaced: 0, blocked: 0, width: 1, height: 2 });
+  eq([eng.world.at(5, 5).dir, eng.world.at(5, 6).type, eng.world.at(1, 1)], ['S', 'belt', null]);
+  eng.sim.sync();
+  eq(total(eng.sim.contentsAt(5, 5).belt), 2, 'ベルトの上の物が付いてこない');
+  eng.handle({ id: 3, op: 'copy', rect: { x0: 5, y0: 5, x1: 5, y1: 6 } });
+  eng.handle({ id: 4, op: 'place', type: 'chest', cells: [{ x: 9, y: 9 }] });
+  eng.handle({ id: 5, op: 'paste', blueprint: res(3).result, x: 9, y: 8, overwrite: true });
+  eq(res(5).result, { placed: 2, skipped: 0, replaced: 1, same: 0 });
+  eq(eng.world.at(9, 9).type, 'belt');
 });
 
 /* ---- 送り出し加工機 ---- */

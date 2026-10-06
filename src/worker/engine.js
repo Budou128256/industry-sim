@@ -14,7 +14,7 @@ import { PathPlacer, canPlace, place, removeAt, rotateAt } from '../core/placeme
 import { makeSnapshot } from '../core/snapshot.js';
 import { loadSave, makeSave } from '../core/save.js';
 import { key } from '../core/grid.js';
-import { captureBlueprint, checkBlueprint, pasteBlueprint } from '../core/blueprint.js';
+import { captureBlueprint, checkBlueprint, moveArea, pasteBlueprint } from '../core/blueprint.js';
 
 /** 画面の範囲の外にも少し余分に入れる（電線のつながりや、端の建物を描くため）。 */
 const MARGIN = 2;
@@ -197,13 +197,25 @@ export class Engine {
     return captureBlueprint(this.world, rect, name);
   }
 
-  /** 設計図を左上 (x, y) に貼る。置けない建物は飛ばす。 */
-  op_paste({ blueprint, x, y }) {
+  /** 設計図を左上 (x, y) に貼る。置けない建物は飛ばす。overwrite なら重なる建物を撤去して置く。 */
+  op_paste({ blueprint, x, y, overwrite = false }) {
     const reason = checkBlueprint(blueprint);
     if (reason) throw new Error(reason);
-    const r = pasteBlueprint(this.world, this.registry, blueprint, x, y);
-    if (r.placed) this.changed();
+    const r = pasteBlueprint(this.world, this.registry, blueprint, x, y, { overwrite });
+    if (r.placed || r.replaced) this.changed();
     return r;
+  }
+
+  /**
+   * 範囲の建物をまとめて動かす。transforms（'r' / 'h' / 'v' の並び）で回す・反転してから左上 (x, y) へ。
+   * 中身（ベルトの上の物・炉の中など）も一緒に動く。置けない所が1つでもあれば何も動かさない。
+   */
+  op_move({ rect, transforms = [], x, y, overwrite = false }) {
+    this.sim.sync();                     // 動かす前の建物を Sim に覚えさせる（中身を引き継ぐため）
+    const r = moveArea(this.world, this.registry, rect, transforms, x, y, { overwrite });
+    for (const [from, to] of r.moves) this.sim.moved.set(from, to);
+    if (r.moved) this.changed();
+    return { moved: r.moved, replaced: r.replaced, blocked: r.blocked, width: r.width, height: r.height };
   }
 
   /** 範囲に1マスでもかかっている建物を撤去する（中身は床に落ちる）。 */

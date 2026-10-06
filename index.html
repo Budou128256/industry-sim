@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>工業シミュレーション基盤 — Phase 7b</title>
+<title>工業シミュレーション基盤 — Phase 7c</title>
 <style>
   :root{
     --bg:#0f1117; --panel:#161a23; --panel2:#1d222d; --line:#2a3140;
@@ -51,7 +51,7 @@
 <body>
 <header>
   <h1>工業シミュレーション基盤</h1>
-  <span class="sub">Phase 7b — 範囲選択・設計図</span>
+  <span class="sub">Phase 7c — 範囲の移動・反転・上書き</span>
   <span class="sub" id="mode" title="シミュレータを動かしている場所"></span>
   <span class="sub" id="saveState" title="このブラウザの中に5秒ごとに自動保存する（変わったときだけ）"></span>
 </header>
@@ -66,7 +66,13 @@
       <button id="btnCut" title="Ctrl+X">切り取り</button>
       <button id="btnDelete" title="Delete">削除</button>
       <button id="btnPaste" title="Ctrl+V">貼り付け</button>
+      <button id="btnMove" title="M（選んだ範囲の中をドラッグしても動かせます）">移動 (M)</button>
       <button id="btnSaveBp" title="選んだ範囲に名前を付けて、このブラウザの中に保存する">設計図として保存</button>
+    </div>
+    <div class="selbtns">
+      <button id="btnPRot" title="R（貼り付け中・移動中）">回す (R)</button>
+      <button id="btnFlipH" title="H（貼り付け中・移動中）">左右反転 (H)</button>
+      <button id="btnFlipV" title="V（貼り付け中・移動中）">上下反転 (V)</button>
     </div>
     <div id="bpList"></div>
     <div class="group">画面</div>
@@ -83,7 +89,11 @@
       Shift / スペース + ドラッグ、中ボタンドラッグ: 画面を動かす<br>
       矢印キー / WASD: 画面を動かす（Shift で速く）<br>
       F / Home: 全体を表示、+ / -: 拡大縮小<br>
-      範囲を選ぶ → Ctrl+C / Ctrl+X / Delete、Ctrl+V で貼る（R で回す、右クリックでやめる）<br>
+      範囲を選ぶ → Ctrl+C / Ctrl+X / Delete、Ctrl+V で貼る<br>
+      選んだ範囲の中をドラッグ / M: まとめて移動（中身ごと）<br>
+      貼り付け・移動中: R 回す、H 左右反転、V 上下反転、右クリック・Esc でやめる<br>
+      重なる所は置きません。Ctrl（Mac は ⌘）を押しながら置くと上書き<br>
+      下見の枠: 緑 置ける / 橙 上書き / 赤 置けない / 灰 同じ物がもうある<br>
       Esc: 選択を解除<br>
       何も選ばずにクリック: 中身を見る<br>
       <br>

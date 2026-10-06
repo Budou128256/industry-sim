@@ -42,6 +42,7 @@ export class Sim {
     this.machines = new Map();
     this.miners = new Map();     // 建物 id -> { progress, cursor, state }
     this.splitState = new Map(); // スプリッターの id -> { next }（中身は belts に持つ。Phase 7）
+    this.moved = new Map();      // まとめて移動した建物の 元の id -> 新しい id（次の sync で中身を引き継ぐ）
     this.produced = {};        // 作った数の累計（item -> 個数）
     this.ground = new Map();
     this.beltLines = [];
@@ -191,6 +192,18 @@ export class Sim {
   /** 撤去された建物の中身を床へ落とし、置かれた建物の中身の入れ物を作る。回しただけなら引き継ぐ。 */
   applyContents(removed, added) {
     const newBelts = [];
+    // まとめて移動した建物は、元の建物の中身を引き継ぐ（added は呼び出し元でも使うので写しで扱う）
+    if (this.moved.size) {
+      added = added.slice();
+      for (const b of added.slice()) {
+        const i = removed.findIndex(r => this.moved.get(r.id) === b.id);
+        if (i < 0) continue;
+        this.move(removed.splice(i, 1)[0].id, b.id);
+        added.splice(added.indexOf(b), 1);
+        if (this.belts.has(b.id)) newBelts.push(b);      // 行き先の床の物も載せる
+      }
+      this.moved.clear();
+    }
     for (const b of added) {
       // 同じ種類が同じ場所から消えていれば、回しただけ。中身を引き継ぐ
       const i = removed.findIndex(r => r.type === b.type && r.x === b.x && r.y === b.y);
