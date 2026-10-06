@@ -96,7 +96,8 @@ export class Input {
       this.emit({ type: 'redraw' });
     }, { passive: false });
 
-    const typing = e => ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+    // 文字を打っている間・アプリの窓（src/ui/dialog.js）が開いている間は、盤面のキー操作をしない
+    const typing = e => ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || document.body.classList.contains('modal-open');
     window.addEventListener('keydown', e => {
       if (typing(e)) return;
       this.shift = e.shiftKey;

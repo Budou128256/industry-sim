@@ -17,6 +17,7 @@ import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
 import { SimClient } from './client.js';
 import { listLocal, loadLocal, removeLocal, saveLocal } from './storage.js';
+import { askConfirm, askText } from './ui/dialog.js';
 import {
   BLUEPRINT_FORMAT, buildingsInside, captureBlueprint, checkBlueprint, flipBlueprint, previewBlueprint, rectFrom, rotateBlueprint,
 } from './core/blueprint.js';
@@ -82,6 +83,10 @@ async function main() {
 
   $('btnClear').onclick = async () => {
     if (!state.view.world.count) return;
+    if (!await askConfirm({
+      title: '全部消す', message: `盤面の建物 ${state.view.world.count} 個と中身を全部消します（自動保存も上書きされます）。\n残したいときは先に「書き出し」で保存してください。`,
+      ok: '全部消す', danger: true,
+    })) return;
     stop();
     await state.client.call('clear');
     status(`全部消しました`);
@@ -195,6 +200,10 @@ async function importFile(file) {
     return;
   }
   if (data && data.format === BLUEPRINT_FORMAT) { await importBlueprint(data, file.name); return; }
+  if (state.view.world.count && !await askConfirm({
+    title: '盤面を読み込む', message: `${file.name} を読み込むと、今の盤面と入れ替わります（自動保存も上書きされます）。\n残したいときは先に「書き出し」で保存してください。`,
+    ok: '読み込む', danger: true,
+  })) return;
   try {
     stop();
     const r = await state.client.call('load', { data });
@@ -231,7 +240,10 @@ async function refreshExamples() {
 
 /** 見本の盤面を開く（今の盤面と入れ替わる）。中身は普通のセーブデータ。 */
 async function openExample(ex) {
-  if (state.view.world.count && !confirm(`見本「${ex.name}」を開くと、今の盤面と入れ替わります（自動保存も上書きされます）。\n残したいときは先に「書き出し」で保存してください。開きますか？`)) return;
+  if (state.view.world.count && !await askConfirm({
+    title: '見本を開く', message: `見本「${ex.name}」を開くと、今の盤面と入れ替わります（自動保存も上書きされます）。\n残したいときは先に「書き出し」で保存してください。`,
+    ok: '開く', danger: true,
+  })) return;
   try {
     const res = await fetch(ex.file, { cache: 'no-store' });
     if (!res.ok) throw new Error(`${ex.file} を読めません (${res.status})`);
@@ -637,11 +649,12 @@ async function saveBlueprint() {
   if (!state.selection) { status('先に「範囲を選ぶ」で範囲を選んでください', true); return; }
   const bp = await state.client.call('copy', { rect: state.selection });
   if (!bp.buildings.length) { status('範囲の中に（全部が入っている）建物がありません', true); return; }
-  const name = (prompt('設計図の名前', '') || '').trim();
+  const name = await askText({ title: '設計図として保存', message: `選んだ範囲（建物 ${bp.buildings.length}・${bp.width}x${bp.height}）に名前を付けて、このブラウザの中に保存します。`, placeholder: '設計図の名前', ok: '保存' });
   if (!name) return;
   bp.name = name;
   try {
-    if (await loadLocal(BP_PREFIX + name) && !confirm(`「${name}」はもうあります。上書きしますか？`)) return;
+    if (await loadLocal(BP_PREFIX + name)
+        && !await askConfirm({ title: '設計図を上書き', message: `設計図「${name}」はもうあります。上書きしますか？`, ok: '上書き', danger: true })) return;
     await saveLocal(BP_PREFIX + name, bp);
     status(`設計図「${name}」を保存しました（建物 ${bp.buildings.length}・${bp.width}x${bp.height}）`);
     refreshBlueprints();
@@ -655,6 +668,8 @@ async function importBlueprint(bp, fileName) {
   if (reason) { status(`${fileName} を読み込めません: ${reason}`, true); return; }
   const name = (bp.name || fileName.replace(/\.json$/i, '')).trim() || '設計図';
   try {
+    if (await loadLocal(BP_PREFIX + name)
+        && !await askConfirm({ title: '設計図を上書き', message: `設計図「${name}」はもう一覧にあります。読み込んだ物で上書きしますか？`, ok: '上書き', danger: true })) return;
     await saveLocal(BP_PREFIX + name, { ...bp, name });
     status(`設計図「${name}」を一覧に加えました（建物 ${bp.buildings.length}）`);
     refreshBlueprints();
@@ -693,7 +708,7 @@ async function refreshBlueprints() {
     const del = document.createElement('button');
     del.className = 'mini'; del.textContent = '×'; del.title = '削除';
     del.onclick = async () => {
-      if (!confirm(`設計図「${name}」を削除しますか？`)) return;
+      if (!await askConfirm({ title: '設計図を削除', message: `設計図「${name}」を削除しますか？`, ok: '削除', danger: true })) return;
       await removeLocal(key);
       refreshBlueprints();
       status(`設計図「${name}」を削除しました`);
