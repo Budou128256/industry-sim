@@ -325,7 +325,7 @@ function onCommand(cmd) {
       return;
     case 'move': startMove(renderer.hover, false); return;
     case 'flip':
-      status('H（左右反転）・V（上下反転）は、貼り付け中（Ctrl+V）か移動中（M）に使えます');
+      status('反転（V・ボタン）は、貼り付け中（Ctrl+V）か移動中（M）に使えます');
       return;
     case 'fit':
       renderer.fitTo(world.width, world.height);
@@ -487,7 +487,7 @@ function pasteStatus(counts) {
   const p = state.paste;
   const what = p.move ? `建物 ${p.bp.buildings.length} 個を移動中` : `「${p.bp.name || 'コピー'}」（${p.bp.width}x${p.bp.height}・建物 ${p.bp.buildings.length}）を貼り付け中`;
   const how = p.move && p.move.drag ? 'ボタンを離すと置きます' : 'クリックで置きます';
-  let line = `${what} — ${how}（Ctrl を押しながらだと上書き）。R 回す / H 左右反転 / V 上下反転 / 右クリック・Esc でやめる`;
+  let line = `${what} — ${how}（Ctrl を押しながらだと上書き）。R 回す / V 上下反転 / 左右反転はボタン / 右クリック・Esc でやめる`;
   if (counts) {
     const parts = [`置ける ${counts.ok}`];
     if (counts.replace) parts.push(`上書き ${counts.replace}`);

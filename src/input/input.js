@@ -10,7 +10,7 @@
  *   { type:'drag',   from, to }       連続設置（前のマス → 今のマス。マウスの通った道どおりに置く）
  *   { type:'release', ctrl }          左ボタンを離した（範囲選択の確定・ドラッグで移動の確定）
  *   { type:'hover', x, y, ctrl }      マウスが動いた（Ctrl を押した・離したときも出す）
- *   { type:'flip', axis }             H: 左右反転（axis 'h'）/ V: 上下反転（axis 'v'）
+ *   { type:'flip', axis }             V: 上下反転（axis 'v'）。左右反転（'h'）はボタンだけ（キーは無し。ユーザーの希望）
  *   { type:'move' }                   M: 選んだ範囲をまとめて動かす
  *   { type:'copy' | 'cut' | 'paste' | 'delete' }   Ctrl+C / Ctrl+X / Ctrl+V / Delete
  *   { type:'fit' }                    盤面全体を表示（F / Home）
@@ -113,7 +113,6 @@ export class Input {
         const c = r.hover;
         if (c) this.emit({ type: 'rotate', ...c });
       }
-      if (k === 'h') this.emit({ type: 'flip', axis: 'h' });
       if (k === 'v') this.emit({ type: 'flip', axis: 'v' });
       if (k === 'm') this.emit({ type: 'move' });
       if (k === 'f' || k === 'Home') this.emit({ type: 'fit' });

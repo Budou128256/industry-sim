@@ -348,7 +348,7 @@ export class Renderer {
   /**
    * 設計図の下見（貼り付け・移動）。
    *   建物そのものを半透明で描き、置ける（緑）・上書き（橙）・置けない（赤）・同じ物がもうある（灰）の枠で囲む。
-   *   上書きで消える建物には赤い ×。移動のときは、動かす元の範囲を暗くする。
+   *   移動のときは、動かす元の範囲を暗くする。
    * g = { items: [{ def, x, y, dir, state, hit }], from: 動かす元の範囲 | null }
    */
   drawPasteGhost({ items, from }) {
@@ -377,20 +377,6 @@ export class Renderer {
       }
     }
     ctx.globalAlpha = 1;
-    // 上書きで撤去される建物
-    const hits = new Map();
-    for (const g of items) for (const b of g.hit || []) hits.set(b.id, b);
-    ctx.strokeStyle = 'rgba(248,113,113,0.95)';
-    ctx.lineWidth = Math.max(2, t * 0.08);
-    ctx.lineCap = 'round';
-    for (const b of hits.values()) {
-      const { px, py } = this.toScreen(b.x, b.y);
-      const { width: w, height: h } = rotatedSize(b.size, b.dir);
-      ctx.beginPath();
-      ctx.moveTo(px + t * 0.15, py + t * 0.15); ctx.lineTo(px + w * t - t * 0.15, py + h * t - t * 0.15);
-      ctx.moveTo(px + w * t - t * 0.15, py + t * 0.15); ctx.lineTo(px + t * 0.15, py + h * t - t * 0.15);
-      ctx.stroke();
-    }
     // 枠
     const COLOR = { ok: '74,222,128', replace: '251,146,60', blocked: '248,113,113', same: '148,163,184' };
     for (const g of items) {
