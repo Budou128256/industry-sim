@@ -158,7 +158,7 @@ export class Renderer {
   }
 
   /**
-   * 電線: 隣の電線へ向かって線を引く。
+   * 電線: 隣の電線と、隣の電気の建物（発電機・採掘機・アームなど）へ向かって線を引く。
    * 明るさはそのマスの電気の強さで変わる（Core Keeper と同じく、発電機から遠いほど暗い）。
    * 電気が届いていなければ暗い灰色。
    */
@@ -173,9 +173,13 @@ export class Renderer {
     ctx.lineCap = 'round';
     ctx.beginPath();
     let any = false;
+    // 隣の電線と、隣の電気を使う・出す・通す建物（発電機・採掘機・アームなど）へ線を伸ばす（ユーザーの希望 2026-10-06）
     for (const d of ['N', 'E', 'S', 'W']) {
-      const n = world.floorAt(bld.x + DELTA[d].x, bld.y + DELTA[d].y);
-      if (!n || n.type !== bld.type) continue;
+      const nx = bld.x + DELTA[d].x, ny = bld.y + DELTA[d].y;
+      const n = world.floorAt(nx, ny);
+      const o = world.at(nx, ny);
+      const powered = o && (this.registry.building(o.type) || {}).power;
+      if (!(n && n.type === bld.type) && !powered) continue;
       any = true;
       ctx.moveTo(cx, cy); ctx.lineTo(cx + DELTA[d].x * t / 2, cy + DELTA[d].y * t / 2);
     }

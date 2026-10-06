@@ -46,6 +46,24 @@
   /* 長い文が入っても1行のまま（バーの高さが変わると盤面がずれる） */
   #status{color:var(--muted);font-size:12.5px;margin-left:auto;flex:1 1 0;min-width:0;
           text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* カーソルを止めたときの詳細（app.js の showTip） */
+  .tip{position:fixed;z-index:50;pointer-events:none;background:rgba(22,26,35,.96);border:1px solid var(--line);
+       border-radius:8px;padding:7px 10px;font-size:12px;line-height:1.55;max-width:300px;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+  .tip .h{font-weight:700}
+  .tip .sec{margin-top:4px;color:var(--muted)}
+  .tip .st{display:flex;align-items:center;gap:6px;padding-left:4px}
+  .tip .st i{width:9px;height:9px;border-radius:2px;flex:none;border:1px solid rgba(0,0,0,.4)}
+  /* アプリの中の確認・入力の窓（src/ui/dialog.js） */
+  .modal{position:fixed;inset:0;background:rgba(5,7,12,.6);display:flex;align-items:center;justify-content:center;z-index:100}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;
+              width:min(440px,calc(100vw - 32px));box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .modal .title{font-weight:700;margin-bottom:6px}
+  .modal .msg{color:var(--muted);white-space:pre-wrap;margin-bottom:12px}
+  .modal .text{width:100%;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;
+               padding:6px 8px;font:inherit;margin-bottom:12px}
+  .modal .btns{display:flex;justify-content:flex-end;gap:8px}
+  .modal .yes{border-color:#d4b13f}
+  .modal .yes.danger{border-color:#f87171;color:#fecaca}
 </style>
 </head>
 <body>
@@ -96,6 +114,7 @@
       貼り付け・移動中: R 回す、V 上下反転（左右反転はボタン）、右クリック・Esc でやめる<br>
       重なる所は置きません。Ctrl（Mac は ⌘）を押しながら置くと上書き<br>
       下見の枠: 緑 置ける / 橙 上書き / 赤 置けない / 灰 同じ物がもうある<br>
+      マウスを0.8秒止める: そのマスの詳細（種類・スタック）<br>
       Esc: 選択を解除<br>
       何も選ばずにクリック: 中身を見る<br>
       <br>
@@ -107,7 +126,7 @@
       炉は左下が入力、右下が出力、下の帯が進み具合です。<br>
       送り出し加工機は、できた製品を正面（黄色の点線）へ自分で出します。<br>
       発電機の電気は電線と機械をたどって24マス先まで届きます（薄い黄色）。<br>
-      電線は発電機から遠いほど暗く、届いていないと灰色です。<br>
+      電線は発電機から遠いほど暗く、届いていないと灰色です。隣の機械にも線がつながって見えます。<br>
       電線は機械の下にも置けます。右クリックは機械を先に消します。<br>
       赤い × は電気が届いていない印です。
     </div>
@@ -130,6 +149,7 @@
       <span id="status">読み込み中…</span>
     </div>
     <canvas id="board"></canvas>
+    <div id="tip" class="tip" hidden></div>
   </main>
 </div>
 
