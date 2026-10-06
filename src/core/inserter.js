@@ -13,7 +13,6 @@
  */
 
 import { DELTA, OPPOSITE, inBounds } from './grid.js';
-import { beltDef } from './belt.js';
 import { containerAdd, containerPeek, containerTake, pileMerge, pilePush } from './inventory.js';
 import { machinePut, machineTake } from './machine.js';
 
@@ -74,7 +73,7 @@ function deliverTo(sim, cell, item, count) {
   const limit = sim.limit(item);
   const b = sim.world.at(cell.x, cell.y);
   let left = count;
-  if (b && beltDef(sim.registry, b)) {
+  if (b && sim.belts.has(b.id)) {             // ベルトとスプリッター
     pilePush(sim.belts.get(b.id), item, left, limit);
     left = 0;
   } else if (b && sim.containers.has(b.id)) {

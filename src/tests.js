@@ -14,6 +14,7 @@ import { buildBeltLines } from './core/belt.js';
 import { makeSnapshot } from './core/snapshot.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { wireColors } from './render/renderer.js';
+import { splitStack, splitterAccepts } from './core/splitter.js';
 import { Engine } from './worker/engine.js';
 import { loadSave, makeSave } from './core/save.js';
 
@@ -191,6 +192,7 @@ const simDefs = {
   pMiner: { id: 'pMiner', size: SIZE_1, directional: true, miner: { periodSeconds: 2, amount: 1 },
             power: { needs: true, conducts: true } },
   miner: { id: 'miner', size: SIZE_1, directional: true, miner: { periodSeconds: 2, amount: 1 } },
+  splitter: { id: 'splitter', size: SIZE_1, directional: true, splitter: { tilesPerSecond: 1 } },
 };
 const simReg = {
   building: id => simDefs[id],
@@ -794,6 +796,70 @@ test('電線の色: 届いていないと灰色、強いほど明るい', () => 
     ok(l > last, `強さ ${lv} が ${lv - 1} より明るくない`);
     last = l;
   }
+});
+
+/* ---- スプリッター（Phase 7） ---- */
+test('スプリッター: 半分に分け、半端は多い方を背面→正面→背面…と交互に', () => {
+  const st = { next: 'back' };
+  eq(splitStack(10, st), { back: 5, front: 5 });
+  eq(st.next, 'back', '割り切れたのに順番が進んだ');
+  eq(splitStack(5, st), { back: 3, front: 2 });
+  eq(splitStack(5, st), { back: 2, front: 3 });
+  eq(splitStack(1, st), { back: 1, front: 0 });
+  eq(splitStack(1, st), { back: 0, front: 1 });
+});
+test('スプリッター: 横からだけ受け取る', () => {
+  const w = simWorld(10, 5);
+  const s = put(w, 'splitter', 3, 2, 'N');
+  ok(splitterAccepts(simReg, s, 2, 2) && splitterAccepts(simReg, s, 4, 2), '横から入らない');
+  ok(!splitterAccepts(simReg, s, 3, 1) && !splitterAccepts(simReg, s, 3, 3), '正面・背面から入った');
+  ok(!splitterAccepts(simReg, s, 1, 2), '離れたマスから入った');
+});
+test('スプリッター: 横から入ったベルトの物を、正面と背面へ半分ずつ送る（先がベルトなら載る）', () => {
+  const w = simWorld(10, 5);
+  put(w, 'belt', 2, 2, 'E');          // 横から入る
+  put(w, 'splitter', 3, 2, 'N');      // 正面 (3,1)、背面 (3,3)
+  put(w, 'belt', 3, 1, 'E');          // 正面の先はベルト → 右へ流れて (4,1) の床へ
+  const sim = new Sim(w, simReg);
+  sim.addItems(2, 2, 'ore', 7);
+  run(sim, 1);
+  eq(total(sim.contentsAt(3, 2).belt), 7, 'スプリッターに入っていない');
+  run(sim, 1);
+  eq(total(sim.contentsAt(3, 3).ground), 4, '背面（多い方）');
+  eq(total(sim.contentsAt(3, 1).belt), 3, '正面のベルト');
+  run(sim, 1);
+  eq(total(sim.contentsAt(4, 1).ground), 3, '正面のベルトの先');
+  eq(sim.totals().onBelts, 0);
+});
+test('スプリッター: 正面・背面から向かってくるベルトは入らず、行き止まりと同じく床に落ちる', () => {
+  const w = simWorld(10, 5);
+  put(w, 'belt', 3, 3, 'N');          // 背面から向かう
+  put(w, 'splitter', 3, 2, 'N');
+  const sim = new Sim(w, simReg);
+  sim.addItems(3, 3, 'ore', 4);
+  run(sim, 1);
+  eq(total(sim.contentsAt(3, 2).ground), 4);
+  eq(total(sim.contentsAt(3, 2).belt), 0, '入ってしまった');
+});
+test('スプリッター: アームは入れられ、撤去で中身は床へ、回しても順番と中身は残り、保存できる', () => {
+  const w = simWorld(10, 5);
+  put(w, 'chest', 1, 2); put(w, 'inserter', 2, 2, 'W'); put(w, 'splitter', 3, 2, 'N');
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 2, 'ore', 3);
+  run(sim, 1);
+  eq(total(sim.contentsAt(3, 2).belt), 3, 'アームが入れられない');
+  run(sim, 1);                        // 3 → 背面 2・正面 1。次は正面が多い方
+  eq([total(sim.contentsAt(3, 3).ground), total(sim.contentsAt(3, 1).ground)], [2, 1]);
+  eq(sim.splitState.get(w.at(3, 2).id).next, 'front');
+  const saved = JSON.parse(JSON.stringify({ world: w, sim }));
+  const back = Sim.fromJSON(saved.sim, World.fromJSON(saved.world, simReg), simReg);
+  eq(back.splitState.get(back.world.at(3, 2).id).next, 'front', '順番が保存されていない');
+  sim.addItems(3, 2, 'plate', 2);
+  rotateAt(w, simReg, 3, 2);
+  eq(total(sim.contentsAt(3, 2).belt), 2, '回したら中身が消えた');
+  eq(sim.splitState.get(w.at(3, 2).id).next, 'front', '回したら順番が戻った');
+  removeAt(w, 3, 2);
+  eq(total(sim.contentsAt(3, 2).ground), 2);
 });
 
 /* ---- 保存・読込（Phase 6） ---- */

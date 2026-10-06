@@ -187,6 +187,12 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(px + w / 2 + d.x * w * 0.33, py + h / 2 + d.y * h * 0.33, Math.max(2, t * 0.09), 0, 7);
       ctx.fill();
+      // スプリッターは背面にも出すので、背面にも印（横から入る）
+      if (def.splitter) {
+        ctx.beginPath();
+        ctx.arc(px + w / 2 - d.x * w * 0.33, py + h / 2 - d.y * h * 0.33, Math.max(2, t * 0.09), 0, 7);
+        ctx.fill();
+      }
     }
     // 名前の頭文字（アイコンは後の段階で）
     if (t >= 18 && def.name) {
