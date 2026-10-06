@@ -106,6 +106,7 @@ async function main() {
   $('btnZoomOut').onclick = () => { state.renderer.zoomCenter(1 / 1.25); onCommand({ type: 'redraw' }); };
   updateSelButtons();
   refreshBlueprints();
+  refreshExamples();
 
   $('btnExport').onclick = exportFile;
   $('btnImport').onclick = () => $('fileImport').click();
@@ -202,6 +203,49 @@ async function importFile(file) {
     autosave();
   } catch (e) {
     status(`${file.name} を読み込めません: ${e.message}`, true);
+  }
+}
+
+/* ---------- 見本（examples/。動きの確認用の盤面） ---------- */
+
+/** examples/index.json を読んで、左の一覧に並べる。 */
+async function refreshExamples() {
+  const box = $('exList');
+  let list = [];
+  try {
+    const res = await fetch('examples/index.json', { cache: 'no-store' });
+    if (res.ok) list = (await res.json()).examples || [];
+  } catch { /* 無ければ並べない */ }
+  box.innerHTML = '';
+  for (const ex of list) {
+    const el = document.createElement('button');
+    el.className = 'pal';
+    el.title = ex.note || '';
+    el.innerHTML = `<i style="background:#a78bfa"></i><span class="n"></span><span class="sz">開く</span>`;
+    el.querySelector('.n').textContent = ex.name;
+    el.onclick = () => openExample(ex);
+    box.appendChild(el);
+  }
+  if (!list.length) box.innerHTML = '<div class="sub">（examples/ が見つかりません）</div>';
+}
+
+/** 見本の盤面を開く（今の盤面と入れ替わる）。中身は普通のセーブデータ。 */
+async function openExample(ex) {
+  if (state.view.world.count && !confirm(`見本「${ex.name}」を開くと、今の盤面と入れ替わります（自動保存も上書きされます）。\n残したいときは先に「書き出し」で保存してください。開きますか？`)) return;
+  try {
+    const res = await fetch(ex.file, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`${ex.file} を読めません (${res.status})`);
+    const data = await res.json();
+    stop();
+    selectBuilding(null);
+    setSelection(null);
+    await state.client.call('load', { data });
+    state.renderer.fitTo(data.world.width, data.world.height);
+    sendView(); draw();
+    status(`見本「${ex.name}」を開きました。▶ 再生で動きます — ${ex.note || ''}`);
+    autosave();
+  } catch (e) {
+    status(`見本を開けません: ${e.message}`, true);
   }
 }
 

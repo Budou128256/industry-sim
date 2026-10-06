@@ -1,0 +1,221 @@
+{
+ "format": "industry-sim",
+ "version": 1,
+ "savedAt": "2026-10-06T00:00:00.000Z",
+ "world": {
+  "version": 1,
+  "width": 20,
+  "height": 14,
+  "buildings": [
+   {
+    "type": "generator",
+    "x": 1,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 2,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 3,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 2,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 3,
+    "y": 3,
+    "dir": "W"
+   },
+   {
+    "type": "belt",
+    "x": 4,
+    "y": 3,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 5,
+    "y": 3,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 6,
+    "y": 3,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 7,
+    "y": 3,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 8,
+    "y": 3,
+    "dir": "E"
+   },
+   {
+    "type": "splitter",
+    "x": 9,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "belt",
+    "x": 9,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "belt",
+    "x": 9,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "belt",
+    "x": 9,
+    "y": 4,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 9,
+    "y": 5,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 9,
+    "y": 6,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 9,
+    "y": 7,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 12,
+    "y": 10,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 13,
+    "y": 10,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 10,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 11,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 12,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 15,
+    "y": 12,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 16,
+    "y": 12,
+    "dir": "E"
+   }
+  ],
+  "resources": []
+ },
+ "sim": {
+  "version": 1,
+  "tick": 0,
+  "belts": [
+   {
+    "x": 12,
+    "y": 10,
+    "stacks": [
+     {
+      "item": "copper-ore",
+      "count": 20
+     }
+    ]
+   }
+  ],
+  "containers": [
+   {
+    "x": 2,
+    "y": 3,
+    "slots": [
+     {
+      "item": "iron-ore",
+      "count": 100
+     },
+     {
+      "item": "iron-ore",
+      "count": 100
+     },
+     {
+      "item": "iron-ore",
+      "count": 100
+     },
+     {
+      "item": "iron-ore",
+      "count": 100
+     },
+     {
+      "item": "iron-ore",
+      "count": 100
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   }
+  ],
+  "machines": [],
+  "miners": [],
+  "splitters": [],
+  "produced": {},
+  "ground": []
+ },
+ "name": "3. ベルトとスプリッター",
+ "note": "アームが箱から鉄鉱石を1スタック（100個）ずつベルトへ載せる。スプリッターは横から入った物を半分ずつ正面（上）と背面（下）へ送り、どちらもベルトの先で床に落ちる。右下: 床に置いてあった銅鉱石の上にベルトを敷いてあり、載って流れる（曲がり角も）"
+}

@@ -1,0 +1,234 @@
+{
+ "format": "industry-sim",
+ "version": 1,
+ "savedAt": "2026-10-06T00:00:00.000Z",
+ "world": {
+  "version": 1,
+  "width": 16,
+  "height": 12,
+  "buildings": [
+   {
+    "type": "generator",
+    "x": 1,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 2,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 3,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 5,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 6,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 8,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 3,
+    "y": 5,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 4,
+    "y": 5,
+    "dir": "W"
+   },
+   {
+    "type": "furnace",
+    "x": 5,
+    "y": 5,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 6,
+    "y": 5,
+    "dir": "W"
+   },
+   {
+    "type": "chest",
+    "x": 7,
+    "y": 5,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 3,
+    "y": 7,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 4,
+    "y": 7,
+    "dir": "W"
+   },
+   {
+    "type": "processor",
+    "x": 5,
+    "y": 7,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 6,
+    "y": 7,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 7,
+    "y": 7,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 8,
+    "y": 7,
+    "dir": "E"
+   },
+   {
+    "type": "chest",
+    "x": 3,
+    "y": 9,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 4,
+    "y": 9,
+    "dir": "W"
+   },
+   {
+    "type": "processor",
+    "x": 5,
+    "y": 9,
+    "dir": "S"
+   }
+  ],
+  "resources": []
+ },
+ "sim": {
+  "version": 1,
+  "tick": 0,
+  "belts": [],
+  "containers": [
+   {
+    "x": 3,
+    "y": 5,
+    "slots": [
+     {
+      "item": "iron-ore",
+      "count": 30
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "x": 3,
+    "y": 7,
+    "slots": [
+     {
+      "item": "copper-ore",
+      "count": 30
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "x": 3,
+    "y": 9,
+    "slots": [
+     {
+      "item": "iron-ore",
+      "count": 30
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   }
+  ],
+  "machines": [],
+  "miners": [],
+  "splitters": [],
+  "produced": {},
+  "ground": []
+ },
+ "name": "2. 炉と送り出し加工機",
+ "note": "上の段: 箱の鉄鉱石をアームが炉へ入れ、できた鉄板を別のアームが右の箱へ移す。中の段: 送り出し加工機（右向き）が銅板を正面のベルトへ自分で出し、ベルトの先で床に落ちる。下の段: 送り出し加工機（下向き）は正面の床へ出す。加工は1個10秒。アームは電線で電気をもらう"
+}

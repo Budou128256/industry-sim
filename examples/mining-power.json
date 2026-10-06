@@ -1,0 +1,258 @@
+{
+ "format": "industry-sim",
+ "version": 1,
+ "savedAt": "2026-10-06T00:00:00.000Z",
+ "world": {
+  "version": 1,
+  "width": 32,
+  "height": 10,
+  "buildings": [
+   {
+    "type": "generator",
+    "x": 1,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 2,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 3,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 5,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 6,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 7,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 8,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 9,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 10,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 11,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 12,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 13,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 14,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 15,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 16,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 17,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 18,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 19,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 20,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 21,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 22,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 23,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 24,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 25,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 26,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 27,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 28,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 29,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "miner",
+    "x": 6,
+    "y": 4,
+    "dir": "W"
+   },
+   {
+    "type": "belt",
+    "x": 7,
+    "y": 4,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 7,
+    "y": 5,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 7,
+    "y": 6,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 7,
+    "y": 7,
+    "dir": "S"
+   },
+   {
+    "type": "miner",
+    "x": 17,
+    "y": 4,
+    "dir": "W"
+   },
+   {
+    "type": "miner",
+    "x": 28,
+    "y": 4,
+    "dir": "W"
+   }
+  ],
+  "resources": [
+   {
+    "x": 5,
+    "y": 4,
+    "item": "iron-ore"
+   },
+   {
+    "x": 16,
+    "y": 4,
+    "item": "iron-ore"
+   },
+   {
+    "x": 27,
+    "y": 4,
+    "item": "iron-ore"
+   }
+  ]
+ },
+ "sim": {
+  "version": 1,
+  "tick": 0,
+  "belts": [],
+  "containers": [],
+  "machines": [],
+  "miners": [],
+  "splitters": [],
+  "produced": {},
+  "ground": []
+ },
+ "name": "1. 採掘機と電気",
+ "note": "発電機（左）から電線が右へ伸びる。電線は遠いほど暗く、24マスより先は灰色。採掘機は正面（左）の鉄鉱石を2秒に1個掘り、背面（右）へ出す。左の採掘機はベルトへ出し、ベルトの行き止まりで床に落ちる。中の採掘機は床へ直接出す。右端の採掘機は電気が届かず止まっている（赤い ×）"
+}

@@ -1,0 +1,156 @@
+/* 見本の盤面（examples/*.json）を作る。
+ *
+ * 見本は普通のセーブデータ（「読み込み」で開ける形）。鉱脈・箱の中身・電気も入るので、
+ * 設計図（建物と向きだけ）ではなくセーブデータにしている。
+ * アプリの画面からは「見本を開く」で選べる。
+ *
+ * 作り直すとき（Node が要る。無ければ examples/*.json をそのまま使えばよい）:
+ *   node tools/make_examples.mjs          作る
+ *   node tools/make_examples.mjs --check  作って、数十秒動かした結果も表示する
+ */
+
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { Registry } from '../src/core/registry.js';
+import { World } from '../src/core/world.js';
+import { Sim } from '../src/core/sim.js';
+import { place } from '../src/core/placement.js';
+import { makeSave } from '../src/core/save.js';
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const readJson = p => JSON.parse(fs.readFileSync(path.join(root, p), 'utf8'));
+
+function loadRegistry() {
+  const reg = new Registry();
+  const index = readJson('data/index.json');
+  for (const kind of ['items', 'buildings', 'recipes']) {
+    for (const id of index[kind]) reg[kind].set(id, readJson(`data/${kind}/${id}.json`));
+  }
+  const problems = reg.validate();
+  if (problems.length) throw new Error(problems.join('\n'));
+  return reg;
+}
+
+/** 見本を作る道具。b.put('belt', x, y, 'E') など。 */
+function board(reg, width, height) {
+  const world = new World({ width, height });
+  const items = [];
+  const api = {
+    world,
+    put(type, x, y, dir = 'N') {
+      if (!place(world, reg.building(type), x, y, dir)) throw new Error(`${type} を (${x}, ${y}) に置けない`);
+      return api;
+    },
+    /** (x0, y) から (x1, y) まで（両端を含む）同じ物を並べる。縦は col。 */
+    row(type, x0, x1, y, dir = 'N') { for (let x = x0; x <= x1; x++) api.put(type, x, y, dir); return api; },
+    col(type, x, y0, y1, dir = 'N') {
+      const step = y1 >= y0 ? 1 : -1;
+      for (let y = y0; y !== y1 + step; y += step) api.put(type, x, y, dir);
+      return api;
+    },
+    ore(item, ...cells) { for (const [x, y] of cells) world.setResource(x, y, item); return api; },
+    items(x, y, item, count) { items.push({ x, y, item, count }); return api; },
+    sim() {
+      const sim = new Sim(world, reg);
+      for (const it of items) sim.addItems(it.x, it.y, it.item, it.count);
+      return sim;
+    },
+  };
+  return api;
+}
+
+const EXAMPLES = [
+  {
+    id: 'mining-power',
+    name: '1. 採掘機と電気',
+    note: '発電機（左）から電線が右へ伸びる。電線は遠いほど暗く、24マスより先は灰色。'
+      + '採掘機は正面（左）の鉄鉱石を2秒に1個掘り、背面（右）へ出す。'
+      + '左の採掘機はベルトへ出し、ベルトの行き止まりで床に落ちる。中の採掘機は床へ直接出す。'
+      + '右端の採掘機は電気が届かず止まっている（赤い ×）',
+    build(reg) {
+      const b = board(reg, 32, 10);
+      b.put('generator', 1, 3).row('wire', 2, 29, 3);
+      b.ore('iron-ore', [5, 4], [16, 4], [27, 4]);
+      b.put('miner', 6, 4, 'W').col('belt', 7, 4, 7, 'S');        // ベルトの先 (7,8) で床に落ちる
+      b.put('miner', 17, 4, 'W');                                   // 背面 (18,4) の床へ
+      b.put('miner', 28, 4, 'W');                                   // 電気が届かない
+      return b;
+    },
+  },
+  {
+    id: 'furnace-processor',
+    name: '2. 炉と送り出し加工機',
+    note: '上の段: 箱の鉄鉱石をアームが炉へ入れ、できた鉄板を別のアームが右の箱へ移す。'
+      + '中の段: 送り出し加工機（右向き）が銅板を正面のベルトへ自分で出し、ベルトの先で床に落ちる。'
+      + '下の段: 送り出し加工機（下向き）は正面の床へ出す。加工は1個10秒。アームは電線で電気をもらう',
+    build(reg) {
+      const b = board(reg, 16, 12);
+      b.put('generator', 1, 6).row('wire', 2, 6, 6).put('wire', 4, 8);
+      // 上の段: 箱 → アーム → 炉 → アーム → 箱（アームは正面から取り、背面へ置く。左向きなら左から右へ運ぶ）
+      b.put('chest', 3, 5).put('inserter', 4, 5, 'W').put('furnace', 5, 5).put('inserter', 6, 5, 'W').put('chest', 7, 5);
+      b.items(3, 5, 'iron-ore', 30);
+      // 中の段: 箱 → アーム → 送り出し加工機（右向き）→ ベルト → 床
+      b.put('chest', 3, 7).put('inserter', 4, 7, 'W').put('processor', 5, 7, 'E').row('belt', 6, 8, 7, 'E');
+      b.items(3, 7, 'copper-ore', 30);
+      // 下の段: 箱 → アーム → 送り出し加工機（下向き）→ 床
+      b.put('chest', 3, 9).put('inserter', 4, 9, 'W').put('processor', 5, 9, 'S');
+      b.items(3, 9, 'iron-ore', 30);
+      return b;
+    },
+  },
+  {
+    id: 'belt-splitter',
+    name: '3. ベルトとスプリッター',
+    note: 'アームが箱から鉄鉱石を1スタック（100個）ずつベルトへ載せる。'
+      + 'スプリッターは横から入った物を半分ずつ正面（上）と背面（下）へ送り、どちらもベルトの先で床に落ちる。'
+      + '右下: 床に置いてあった銅鉱石の上にベルトを敷いてあり、載って流れる（曲がり角も）',
+    build(reg) {
+      const b = board(reg, 20, 14);
+      b.put('generator', 1, 4).row('wire', 2, 3, 4);
+      b.put('chest', 2, 3).put('inserter', 3, 3, 'W').row('belt', 4, 8, 3, 'E');
+      b.items(2, 3, 'iron-ore', 500);
+      b.put('splitter', 9, 3, 'N').col('belt', 9, 2, 1, 'N').col('belt', 9, 4, 7, 'S');   // 上は (9,0)、下は (9,8) に落ちる
+      // 床の物の上に敷いたベルト（曲がり角あり）
+      b.items(12, 10, 'copper-ore', 20);
+      b.row('belt', 12, 14, 10, 'E');
+      b.world.remove(b.world.at(14, 10)); b.put('belt', 14, 10, 'S').put('belt', 14, 11, 'S').row('belt', 14, 16, 12, 'E');
+      return b;
+    },
+  },
+  {
+    id: 'factory',
+    name: '4. 全部つなげた小さな工場',
+    note: '採掘機3台 → ベルト → 床 → アーム → 炉 → アーム → ベルト → スプリッター → 上下に分かれて床へ。'
+      + '採掘機は発電機の隣から電気をもらい、隣どうしで電気を渡す。炉は10秒に1枚なので、鉱石は炉の中（入力）に溜まっていく',
+    build(reg) {
+      const b = board(reg, 24, 12);
+      b.ore('iron-ore', [3, 7], [4, 7], [5, 7]);
+      b.put('generator', 2, 6).row('miner', 3, 5, 6, 'S').row('wire', 6, 11, 6);
+      b.row('belt', 3, 7, 5, 'E');                                  // (8,5) の床に落ちる
+      b.put('inserter', 9, 5, 'W').put('furnace', 10, 5).put('inserter', 11, 5, 'W');
+      b.row('belt', 12, 13, 5, 'E').put('splitter', 14, 5, 'N');
+      b.col('belt', 14, 4, 3, 'N').col('belt', 14, 6, 7, 'S');      // 上は (14,2)、下は (14,8) に落ちる
+      return b;
+    },
+  },
+];
+
+const reg = loadRegistry();
+const check = process.argv.includes('--check');
+const list = [];
+for (const ex of EXAMPLES) {
+  const b = ex.build(reg);
+  const sim = b.sim();
+  const save = { ...makeSave(b.world, sim, new Date('2026-10-06T00:00:00Z')), name: ex.name, note: ex.note };
+  fs.writeFileSync(path.join(root, 'examples', `${ex.id}.json`), JSON.stringify(save, null, 1) + '\n');
+  list.push({ id: ex.id, name: ex.name, note: ex.note, file: `examples/${ex.id}.json` });
+  if (check) {
+    for (let i = 0; i < 40; i++) sim.stepSecond();
+    const t = sim.totals();
+    console.log(`${ex.name}: 40秒後`, JSON.stringify({ ...t, produced: sim.produced, unpowered: sim.unpowered.size }));
+    for (const [k, l] of sim.ground) console.log('   床', k, l.map(s => `${s.item}x${s.count}`).join(','));
+  }
+}
+fs.writeFileSync(path.join(root, 'examples', 'index.json'), JSON.stringify({ examples: list }, null, 1) + '\n');
+console.log(`examples/ に ${list.length} 個書きました`);
