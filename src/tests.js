@@ -193,11 +193,12 @@ const simDefs = {
             power: { needs: true, conducts: true } },
   miner: { id: 'miner', size: SIZE_1, directional: true, miner: { periodSeconds: 2, amount: 1 } },
   splitter: { id: 'splitter', size: SIZE_1, directional: true, splitter: { tilesPerSecond: 1 } },
+  proc: { id: 'proc', size: SIZE_1, directional: true, machine: { outputFront: true } },
 };
 const simReg = {
   building: id => simDefs[id],
   item: id => ({ ore: { id: 'ore', stackSize: 10 }, plate: { id: 'plate', stackSize: 10 } }[id]),
-  recipes: new Map([['plate', { id: 'plate', inputs: { ore: 1 }, outputs: { plate: 1 }, craftTime: 1, machines: ['smelter'] }]]),
+  recipes: new Map([['plate', { id: 'plate', inputs: { ore: 1 }, outputs: { plate: 1 }, craftTime: 1, machines: ['smelter', 'proc'] }]]),
 };
 function simWorld(w = 10, h = 3) { return new World({ width: w, height: h }); }
 function put(w, id, x, y, dir = 'N') { return place(w, simDefs[id], x, y, dir); }
@@ -796,6 +797,43 @@ test('電線の色: 届いていないと灰色、強いほど明るい', () => 
     ok(l > last, `強さ ${lv} が ${lv - 1} より明るくない`);
     last = l;
   }
+});
+
+/* ---- 送り出し加工機 ---- */
+test('送り出し加工機: できた製品を正面へ送り出す（ベルトなら上へ、それ以外は床へ）', () => {
+  const w = simWorld(10, 5);
+  put(w, 'proc', 2, 2, 'E');            // 正面は (3,2)
+  put(w, 'belt', 3, 2, 'E');
+  const sim = new Sim(w, simReg);
+  eq(sim.addItems(2, 2, 'ore', 2), 'machine');
+  run(sim, 1);                            // craftTime 1秒で1個
+  const m = sim.contentsAt(2, 2).machine;
+  ok(!m.output, '出力に残っている');
+  eq(total(sim.contentsAt(3, 2).belt) + total(sim.contentsAt(4, 2).ground), 1, '正面に出ていない');
+  run(sim, 3);
+  eq(total(sim.contentsAt(4, 2).ground), 2, 'ベルトの先に流れていない');
+  eq(sim.produced.plate, 2);
+});
+test('送り出し加工機: 正面が空きマスなら床へ、盤面の外なら出力に溜まる', () => {
+  const w = simWorld(10, 5);
+  put(w, 'proc', 2, 2, 'N');            // 正面 (2,1) は空き
+  put(w, 'proc', 9, 2, 'E');            // 正面は盤面の外
+  const sim = new Sim(w, simReg);
+  sim.addItems(2, 2, 'ore', 1); sim.addItems(9, 2, 'ore', 1);
+  run(sim, 2);
+  eq(sim.contentsAt(2, 1).ground, [{ item: 'plate', count: 1 }]);
+  eq(sim.contentsAt(9, 2).machine.output, { item: 'plate', count: 1 });
+});
+test('送り出し加工機: 出したばかりの物は同じ tick に進まない', () => {
+  const w = simWorld(10, 5);
+  put(w, 'proc', 2, 2, 'E'); put(w, 'belt', 3, 2, 'E'); put(w, 'belt', 4, 2, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(2, 2, 'ore', 1);
+  for (let i = 0; i < 25; i++) {
+    sim.step();
+    if (total(sim.contentsAt(3, 2).belt) + total(sim.contentsAt(4, 2).belt)) break;
+  }
+  eq(total(sim.contentsAt(3, 2).belt), 1, '正面のベルトを飛ばした');
 });
 
 /* ---- スプリッター（Phase 7） ---- */

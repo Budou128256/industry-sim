@@ -6,7 +6,7 @@
 
 import { DELTA, footprint, key, rotatedSize } from '../core/grid.js';
 import { minerOutput, minerTargets } from '../core/miner.js';
-import { craftTicks, recipeFor } from '../core/machine.js';
+import { craftTicks, machineDef, machineOutputCell, recipeFor } from '../core/machine.js';
 import { TICK_HZ } from '../core/sim.js';
 
 export class Renderer {
@@ -227,6 +227,7 @@ export class Renderer {
       const m = sim.machines.get(b.id);
       if (m) this.drawMachine(b, m);
       if (sim.miners.has(b.id)) this.drawMinerOutput(b);
+      if (m && (machineDef(this.registry, b) || {}).outputFront) this.markCell(machineOutputCell(b), 'rgba(250,204,21,0.75)');
     }
     if (!sim.ground.size) return;
     for (let y = y0; y <= y1; y++) {
@@ -271,17 +272,19 @@ export class Renderer {
 
   /** 採掘機の掘るマス（水色の点線）と出し先のマス（黄色の点線）。 */
   drawMinerOutput(b) {
+    for (const c of minerTargets(b)) this.markCell(c, 'rgba(56,189,248,0.75)');
+    this.markCell(minerOutput(b), 'rgba(250,204,21,0.75)');
+  }
+
+  /** マスを点線の枠で囲む（採掘機の掘る所・出し先、送り出し加工機の出し先）。 */
+  markCell(c, color) {
     const ctx = this.ctx, t = this.tile;
-    const mark = (c, color) => {
-      const { px, py } = this.toScreen(c.x, c.y);
-      ctx.strokeStyle = color;
-      ctx.setLineDash([3, 3]);
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
-      ctx.setLineDash([]);
-    };
-    for (const c of minerTargets(b)) mark(c, 'rgba(56,189,248,0.75)');
-    mark(minerOutput(b), 'rgba(250,204,21,0.75)');
+    const { px, py } = this.toScreen(c.x, c.y);
+    ctx.strokeStyle = color;
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
+    ctx.setLineDash([]);
   }
 
   drawStack(x, y, list, where) {

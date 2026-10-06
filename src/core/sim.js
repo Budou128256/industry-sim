@@ -3,7 +3,7 @@
  * **描画も DOM も知らない。** あとで Web Worker へ移せるよう、ブラウザの API を使わない。
  *
  * 時間: 1秒 = 20 tick（corekeeper_layout/static/sim.js と同じ。出典は Core Keeper 日本語 Wiki の回路使用例）。
- * 1 tick の順番: 加工機 → ベルト → 採掘機 → アーム（採掘機以外は sim.js と同じ順）。
+ * 1 tick の順番: 加工機 → ベルト → 採掘機 → 送り出し加工機の送り出し → アーム（採掘機以外は sim.js と同じ順）。
  *
  * 中身の持ち方:
  *   belts      建物 id -> スタックの列（ベルトの上。スプリッターの中もここ）
@@ -20,7 +20,7 @@
 import { footprint, key, parseKey } from './grid.js';
 import { beltDef, buildBeltLines, sortBeltLines, stepBelts } from './belt.js';
 import { inserterDef, stepInserters } from './inserter.js';
-import { machinePut, makeMachine, stepMachines } from './machine.js';
+import { machinePut, makeMachine, stepMachineOutputs, stepMachines } from './machine.js';
 import { makeMiner, stepMiners } from './miner.js';
 import { makeSplitterState } from './splitter.js';
 import { computePower, isPowered, updatePower } from './power.js';
@@ -250,6 +250,7 @@ export class Sim {
     stepMachines(this);
     stepBelts(this);
     stepMiners(this);      // ベルトの後。出したばかりの物が同じ tick に1マス進まないように
+    stepMachineOutputs(this);   // 送り出し加工機も同じ理由でベルトの後
     stepInserters(this);
     return this.tick;
   }

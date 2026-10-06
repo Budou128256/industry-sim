@@ -9,6 +9,7 @@
   "buildings": [
     "miner",
     "furnace",
+    "processor",
     "belt",
     "splitter",
     "inserter",
