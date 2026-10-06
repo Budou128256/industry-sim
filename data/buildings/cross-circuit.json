@@ -1,0 +1,16 @@
+{
+  "id": "cross-circuit",
+  "name": "交差回路(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#6a5a8a",
+  "directional": false,
+  "tags": [
+    "power"
+  ],
+  "note": "縦と横の電線を、つなげずに交差させる。来た向きのまま、まっすぐ向こう側へだけ電気を通す",
+  "signal": { "type": "cross" },
+  "power": {}
+}

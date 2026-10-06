@@ -1,0 +1,16 @@
+{
+  "id": "delay-circuit",
+  "name": "遅延回路(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#5a6a8a",
+  "directional": true,
+  "tags": [
+    "power"
+  ],
+  "note": "背面から入った電気を、1秒遅れて正面へ出す",
+  "signal": { "type": "delay", "seconds": 1 },
+  "power": {}
+}

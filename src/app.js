@@ -28,7 +28,7 @@ const AUTOSAVE = 'autosave';
 const AUTOSAVE_MS = 5000;
 const EMPTY = { tick: 0, seconds: 0, count: 0, ...BOARD, rect: { x0: 0, y0: 0, x1: -1, y1: -1 },
                 buildings: [], resources: [], power: [], unpowered: [], busy: [],
-                belts: [], containers: [], machines: [], miners: [], collectors: [], ground: [] };
+                belts: [], containers: [], machines: [], miners: [], collectors: [], signals: [], ground: [] };
 
 const state = {
   registry: null,
@@ -924,6 +924,13 @@ function tipHTML(cell, c) {
 }
 
 async function inspect(x, y) {
+  // レバーはクリックで入り切りする
+  const hit = state.view.world.at(x, y);
+  const hitDef = hit && state.registry.building(hit.type);
+  if (hitDef && hitDef.signal && hitDef.signal.type === 'lever') {
+    const { on } = await state.client.call('toggle', { x, y });
+    if (on !== null) { status(`(${hit.x}, ${hit.y}) ${hitDef.name}を${on ? '入れました（電気を通す）' : '切りました（電気を通さない）'}`); return; }
+  }
   const c = await state.client.call('inspect', { x, y });
   const parts = [];
   if (c.belt && c.belt.length) parts.push(`ベルト上: ${describe(c.belt)}`);

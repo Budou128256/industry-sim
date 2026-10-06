@@ -13,6 +13,7 @@
   ],
   "buildings": [
     "miner",
+    "crude-drill",
     "furnace",
     "processor",
     "table-saw",
@@ -24,7 +25,12 @@
     "collector",
     "chest",
     "generator",
-    "wire"
+    "wire",
+    "lever",
+    "pressure-plate",
+    "logic-circuit",
+    "delay-circuit",
+    "cross-circuit"
   ],
   "recipes": [
     "iron-plate",

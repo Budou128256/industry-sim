@@ -58,6 +58,7 @@ export class ViewSim {
     this.machines = new Map(snap.machines);
     this.miners = new Map(snap.miners);
     this.collectors = new Map(snap.collectors || []);
+    this.signals = new Map(snap.signals || []);
     this.ground = new Map(snap.ground.map(([x, y, list]) => [key(x, y), list]));
   }
 

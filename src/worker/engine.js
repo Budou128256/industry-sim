@@ -14,6 +14,7 @@ import { PathPlacer, canPlace, place, removeAt, rotateAt } from '../core/placeme
 import { makeSnapshot } from '../core/snapshot.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from '../core/save.js';
 import { key } from '../core/grid.js';
+import { toggleLever } from '../core/signal.js';
 import { buildingsInside, captureBlueprint, checkBlueprint, moveArea, pasteBlueprint } from '../core/blueprint.js';
 import { History, applyEntry } from '../core/history.js';
 
@@ -159,6 +160,14 @@ export class Engine {
     return { ok: true };
   }
 
+  /** レバーを入れる・切る。レバーでなければ { on: null }。 */
+  op_toggle({ x, y }) {
+    this.sim.sync();
+    const on = toggleLever(this.sim, x, y);
+    if (on !== null) { this.sim.sync(); this.changed(); }
+    return { on };
+  }
+
   op_items({ x, y, item, count }) {
     const w = this.world;
     if (x < 0 || y < 0 || x >= w.width || y >= w.height) return { where: null };
@@ -249,7 +258,7 @@ export class Engine {
       container: c.container ? { slots: c.container.slots } : null,
       machine: c.machine || null,
       miner: c.miner ? { state: c.miner.state } : null,
-      device: c.collector ? { state: c.collector.state } : null,
+      device: c.collector ? { state: c.collector.state } : c.signal ? { state: c.signal.on ? '入' : '切' } : null,
       ground: c.ground,
       resource: c.resource || null,
     };

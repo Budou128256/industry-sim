@@ -19,6 +19,7 @@ import { captureBlueprint, checkBlueprint, flipBlueprint, moveArea, pasteBluepri
 import { Engine } from './worker/engine.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
 import { stackLimit } from './core/inventory.js';
+import { toggleLever } from './core/signal.js';
 
 const results = [];
 function test(name, fn) {
@@ -1356,6 +1357,81 @@ test('粉砕機: スクラップ用アイテム1個を10秒で2〜3種類にし�
   s2.addItems(2, 1, 'scrap-a', 1); for (let i = 0; i < 12; i++) s2.stepSecond();
   eq(s2.contentsAt(2, 1).machine.state, '出し先が盤面の外');
   eq(s2.contentsAt(2, 1).machine.input, { item: 'scrap-a', count: 1 });
+});
+/* ---- レバー・感圧板・回路（signal.js） ---- */
+const sigBoard = (w, list) => { for (const [type, x, y, dir = 'N'] of list) ok(place(w, reg.building(type), x, y, dir), `${type} を (${x},${y}) に置けない`); };
+const poweredAt = (sim, x, y) => { sim.sync(); return !sim.unpowered.has(sim.world.at(x, y).id); };
+test('レバー: 入っているときだけ電気を通す。置いた直後は切れている。保存しても入り切りが残る', () => {
+  const w = new World({ width: 8, height: 3 });
+  sigBoard(w, [['generator', 0, 1], ['lever', 1, 1], ['wire', 2, 1], ['miner', 3, 1, 'W']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 3, 1), false, '切れているのに届いた');
+  eq(toggleLever(sim, 1, 1), true);
+  eq(poweredAt(sim, 3, 1), true, '入れたのに届かない');
+  const saved = JSON.parse(JSON.stringify({ world: w, sim }));
+  const w2 = World.fromJSON(saved.world, reg);
+  const back = Sim.fromJSON(saved.sim, w2, reg);
+  eq(poweredAt(back, 3, 1), true, '読み込むとレバーが切れた');
+  eq(toggleLever(sim, 1, 1), false);
+  eq(poweredAt(sim, 3, 1), false);
+  eq(toggleLever(sim, 2, 1), null, '電線を入り切りできた');
+});
+test('交差回路: 縦と横がつながらず、来た向きのまままっすぐ通す', () => {
+  const w = new World({ width: 9, height: 9 });
+  sigBoard(w, [['generator', 1, 4], ['wire', 2, 4], ['wire', 3, 4], ['cross-circuit', 4, 4], ['wire', 5, 4], ['miner', 6, 4, 'W'],
+               ['wire', 4, 2], ['wire', 4, 3], ['wire', 4, 5], ['miner', 4, 1, 'S'], ['miner', 4, 6, 'N']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 6, 4), true, '横に通らない');
+  eq([poweredAt(sim, 4, 1), poweredAt(sim, 4, 6)], [false, false], '横から縦へ漏れた');
+});
+test('論理回路: 左・右・背面のうちちょうど2つに電気が来ると、正面へ出す', () => {
+  const w = new World({ width: 11, height: 10 });
+  sigBoard(w, [['logic-circuit', 5, 5, 'N'], ['wire', 5, 4], ['miner', 5, 3, 'S'],
+               ['generator', 1, 5], ['lever', 2, 5], ['wire', 3, 5], ['wire', 4, 5],      // 左
+               ['generator', 9, 5], ['lever', 8, 5], ['wire', 7, 5], ['wire', 6, 5],      // 右
+               ['generator', 5, 9], ['lever', 5, 8], ['wire', 5, 7], ['wire', 5, 6]]);    // 背面
+  const sim = new Sim(w, reg);
+  const out = () => poweredAt(sim, 5, 3);
+  eq(out(), false, '0つで出た');
+  toggleLever(sim, 2, 5); eq(out(), false, '1つで出た');
+  toggleLever(sim, 8, 5); eq(out(), true, '2つで出ない');
+  toggleLever(sim, 5, 8); eq(out(), false, '3つで出た');
+  toggleLever(sim, 2, 5); eq(out(), true, '右と背面の2つで出ない');
+});
+test('遅延回路: 背面から入った電気を1秒遅れて正面へ出す', () => {
+  const w = new World({ width: 8, height: 3 });
+  sigBoard(w, [['generator', 0, 1], ['lever', 1, 1], ['wire', 2, 1], ['delay-circuit', 3, 1, 'E'], ['wire', 4, 1], ['miner', 5, 1, 'W']]);
+  const sim = new Sim(w, reg);
+  sim.step();
+  toggleLever(sim, 1, 1);
+  for (let i = 0; i < 10; i++) sim.step();
+  eq(poweredAt(sim, 5, 1), false, '0.5秒で出た');
+  for (let i = 0; i < 12; i++) sim.step();
+  eq(poweredAt(sim, 5, 1), true, '1秒たっても出ない');
+  toggleLever(sim, 1, 1);
+  for (let i = 0; i < 10; i++) sim.step();
+  eq(poweredAt(sim, 5, 1), true, '切って0.5秒で止まった');
+  for (let i = 0; i < 12; i++) sim.step();
+  eq(poweredAt(sim, 5, 1), false, '切って1秒たっても止まらない');
+});
+test('感圧板: そのマスの床に物があるあいだ弱い電気を出す', () => {
+  const w = new World({ width: 10, height: 3 });
+  sigBoard(w, [['pressure-plate', 1, 1], ['wire', 2, 1], ['miner', 3, 1, 'W'], ['wire', 4, 1], ['wire', 5, 1], ['wire', 6, 1], ['miner', 7, 1, 'W']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 3, 1), false, '何も無いのに出た');
+  sim.addItems(1, 1, 'coal', 1);
+  sim.step();
+  eq(poweredAt(sim, 3, 1), true, '物があるのに出ない');
+  eq(poweredAt(sim, 7, 1), false, '弱い電気（5）なのに6マス先まで届いた');
+});
+test('簡易ドリル: 採掘機の半分の速さ（4秒に1個）で掘る', () => {
+  const w = new World({ width: 6, height: 3 });
+  sigBoard(w, [['generator', 1, 0], ['crude-drill', 1, 1, 'W'], ['miner', 1, 2, 'W']]);
+  w.setResource(0, 1, 'iron-ore'); w.setResource(0, 2, 'iron-ore');
+  const sim = new Sim(w, reg);
+  for (let i = 0; i < 8; i++) sim.stepSecond();
+  eq(sim.contentsAt(2, 1).ground, [{ item: 'iron-ore', count: 2 }]);
+  eq(sim.contentsAt(2, 2).ground, [{ item: 'iron-ore', count: 4 }]);
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {
