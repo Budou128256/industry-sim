@@ -6,6 +6,7 @@
 
 import { DELTA, footprint, key, rotatedSize } from '../core/grid.js';
 import { minerOutput, minerTargets } from '../core/miner.js';
+import { collectorArea, collectorDef, collectorOutput } from '../core/collector.js';
 import { craftTicks, machineDef, machineOutputCell, recipeFor } from '../core/machine.js';
 import { TICK_HZ } from '../core/sim.js';
 
@@ -249,6 +250,7 @@ export class Renderer {
       const m = sim.machines.get(b.id);
       if (m) this.drawMachine(b, m);
       if (sim.miners.has(b.id)) this.drawMinerOutput(b);
+      if (sim.collectors && sim.collectors.has(b.id)) this.drawCollectorArea(b);
       if (m && (machineDef(this.registry, b) || {}).outputFront) this.markCell(machineOutputCell(b), 'rgba(250,204,21,0.75)');
     }
     if (!sim.ground.size) return;
@@ -296,6 +298,20 @@ export class Renderer {
   drawMinerOutput(b) {
     for (const c of minerTargets(b)) this.markCell(c, 'rgba(56,189,248,0.75)');
     this.markCell(minerOutput(b), 'rgba(250,204,21,0.75)');
+  }
+
+  /** 回収機の集める範囲（水色の点線の大きな枠）と移す先のマス（黄色の点線）。 */
+  drawCollectorArea(b) {
+    const area = collectorArea(b, (collectorDef(this.registry, b) || {}).range || 5);
+    const xs = area.map(c => c.x), ys = area.map(c => c.y);
+    const a = this.toScreen(Math.min(...xs), Math.min(...ys)), t = this.tile;
+    const ctx = this.ctx;
+    ctx.strokeStyle = 'rgba(56,189,248,0.6)';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(a.px + 2, a.py + 2, (Math.max(...xs) - Math.min(...xs) + 1) * t - 4, (Math.max(...ys) - Math.min(...ys) + 1) * t - 4);
+    ctx.setLineDash([]);
+    this.markCell(collectorOutput(b), 'rgba(250,204,21,0.75)');
   }
 
   /** マスを点線の枠で囲む（採掘機の掘る所・出し先、送り出し加工機の出し先）。 */

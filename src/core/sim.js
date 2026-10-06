@@ -3,7 +3,7 @@
  * **描画も DOM も知らない。** あとで Web Worker へ移せるよう、ブラウザの API を使わない。
  *
  * 時間: 1秒 = 20 tick（corekeeper_layout/static/sim.js と同じ。出典は Core Keeper 日本語 Wiki の回路使用例）。
- * 1 tick の順番: 加工機 → ベルト → 採掘機 → 送り出し加工機の送り出し → アーム（採掘機以外は sim.js と同じ順）。
+ * 1 tick の順番: 加工機 → ベルト → 採掘機 → 送り出し加工機の送り出し → 回収機 → アーム（採掘機以外は sim.js と同じ順）。
  *
  * 中身の持ち方:
  *   belts      建物 id -> スタックの列（ベルトの上。スプリッターの中もここ）
@@ -22,6 +22,7 @@ import { beltDef, buildBeltLines, sortBeltLines, stepBelts } from './belt.js';
 import { inserterDef, stepInserters } from './inserter.js';
 import { machinePut, makeMachine, stepMachineOutputs, stepMachines } from './machine.js';
 import { makeMiner, stepMiners } from './miner.js';
+import { makeCollector, stepCollectors } from './collector.js';
 import { makeSplitterState } from './splitter.js';
 import { computePower, isPowered, updatePower } from './power.js';
 import { containerAdd, containerTotal, makeContainer, pileMerge, pilePush, pileTotal, stackLimit } from './inventory.js';
@@ -41,6 +42,7 @@ export class Sim {
     this.containers = new Map();
     this.machines = new Map();
     this.miners = new Map();     // 建物 id -> { progress, cursor, state }
+    this.collectors = new Map(); // 回収機の id -> { progress, state }
     this.splitState = new Map(); // スプリッターの id -> { next }（中身は belts に持つ。Phase 7）
     this.moved = new Map();      // まとめて移動した建物の 元の id -> 新しい id（次の sync で中身を引き継ぐ）
     this.produced = {};        // 作った数の累計（item -> 個数）
@@ -218,6 +220,7 @@ export class Sim {
       if (def.container) this.containers.set(b.id, makeContainer(def.container.slots || 1));
       if (def.machine) this.machines.set(b.id, makeMachine());
       if (def.miner) this.miners.set(b.id, makeMiner());
+      if (def.collector) this.collectors.set(b.id, makeCollector());
     }
     for (const r of removed) {
       if (this.belts.has(r.id)) this.dropToGround(r.x, r.y, this.belts.get(r.id));
@@ -232,6 +235,7 @@ export class Sim {
       this.containers.delete(r.id);
       this.machines.delete(r.id);
       this.miners.delete(r.id);
+      this.collectors.delete(r.id);
       this.splitState.delete(r.id);
     }
     // 床に落ちている物の上にベルトを敷いたら、その物はベルトに載って流れる。
@@ -249,7 +253,7 @@ export class Sim {
   }
 
   move(fromId, toId) {
-    for (const m of [this.belts, this.containers, this.machines, this.miners, this.splitState]) {
+    for (const m of [this.belts, this.containers, this.machines, this.miners, this.collectors, this.splitState]) {
       if (m.has(fromId)) { m.set(toId, m.get(fromId)); m.delete(fromId); }
     }
   }
@@ -264,6 +268,7 @@ export class Sim {
     stepBelts(this);
     stepMiners(this);      // ベルトの後。出したばかりの物が同じ tick に1マス進まないように
     stepMachineOutputs(this);   // 送り出し加工機も同じ理由でベルトの後
+    stepCollectors(this);       // 回収機も同じ理由でベルトの後
     stepInserters(this);
     return this.tick;
   }
@@ -305,6 +310,7 @@ export class Sim {
     if (b && this.containers.has(b.id)) out.container = this.containers.get(b.id);
     if (b && this.machines.has(b.id)) out.machine = this.machines.get(b.id);
     if (b && this.miners.has(b.id)) out.miner = this.miners.get(b.id);
+    if (b && this.collectors.has(b.id)) out.collector = this.collectors.get(b.id);
     const res = this.world.resourceAt(x, y);
     if (res) out.resource = res;
     return out;

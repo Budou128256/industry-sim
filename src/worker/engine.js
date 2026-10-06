@@ -249,6 +249,7 @@ export class Engine {
       container: c.container ? { slots: c.container.slots } : null,
       machine: c.machine || null,
       miner: c.miner ? { state: c.miner.state } : null,
+      device: c.collector ? { state: c.collector.state } : null,
       ground: c.ground,
       resource: c.resource || null,
     };

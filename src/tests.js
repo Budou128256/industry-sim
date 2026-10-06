@@ -1295,6 +1295,27 @@ test('製材機（data を足しただけの機械）: 電気が届けば木材�
   eq(sim.contentsAt(3, 0).machine.input, null, '炉に木材が入った');
   eq(sim.contentsAt(3, 0).ground, [{ item: 'wood', count: 1 }]);
 });
+test('回収機: 正面5x5の床の物を、1秒ごとに背面へまとめて移す。範囲の外・電気が無いときは動かない', () => {
+  const w = new World({ width: 12, height: 12 });
+  place(w, reg.building('generator'), 4, 8, 'N');      // 回収機の左隣
+  place(w, reg.building('collector'), 5, 8, 'N');       // 正面は上。範囲は x 3..7, y 3..7、背面は (5,9)
+  place(w, reg.building('chest'), 5, 9, 'N');
+  const sim = new Sim(w, reg);
+  sim.addItems(3, 3, 'iron-ore', 5); sim.addItems(7, 7, 'coal', 2); sim.addItems(5, 2, 'coal', 9);   // (5,2) は範囲の外
+  sim.stepSecond();
+  eq(sim.contentsAt(3, 3).ground, []);
+  eq(sim.contentsAt(5, 2).ground, [{ item: 'coal', count: 9 }], '範囲の外を取った');
+  const got = sim.contentsAt(5, 9).container.slots.filter(Boolean);
+  eq(got.reduce((a, s) => a + s.count, 0), 7);
+  eq(sim.contentsAt(5, 8).collector.state, '稼働中');
+  // 電気が無い回収機
+  const w2 = new World({ width: 8, height: 8 });
+  place(w2, reg.building('collector'), 3, 6, 'N');
+  const s2 = new Sim(w2, reg);
+  s2.addItems(3, 4, 'coal', 1); s2.stepSecond();
+  eq(s2.contentsAt(3, 4).ground, [{ item: 'coal', count: 1 }]);
+  eq(s2.contentsAt(3, 6).collector.state, '電力なし');
+});
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {
     for (const id of Object.keys(r.inputs)) ok(reg.item(id), `${r.id} の材料 ${id} が無い`);

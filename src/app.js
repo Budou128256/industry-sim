@@ -28,7 +28,7 @@ const AUTOSAVE = 'autosave';
 const AUTOSAVE_MS = 5000;
 const EMPTY = { tick: 0, seconds: 0, count: 0, ...BOARD, rect: { x0: 0, y0: 0, x1: -1, y1: -1 },
                 buildings: [], resources: [], power: [], unpowered: [], busy: [],
-                belts: [], containers: [], machines: [], miners: [], ground: [] };
+                belts: [], containers: [], machines: [], miners: [], collectors: [], ground: [] };
 
 const state = {
   registry: null,
@@ -913,6 +913,7 @@ function tipHTML(cell, c) {
     out += stacksHTML('入力', [c.machine.input]) + stacksHTML('出力', [c.machine.output]);
   }
   if (c.miner) out += `<div class="sec">状態: ${esc(c.miner.state)}</div>`;
+  if (c.device) out += `<div class="sec">状態: ${esc(c.device.state)}</div>`;
   if (c.ground && c.ground.length) out += stacksHTML('床', c.ground);
   if (c.resource) out += `<div class="sec">鉱脈: ${esc(itemName(c.resource))}</div>`;
   if (c.wire) out += `<div class="sec">床の層: ${esc(state.registry.building(c.wire).name)}</div>`;
@@ -933,6 +934,7 @@ async function inspect(x, y) {
     parts.push(`${m.state} / 入力: ${m.input ? describe([m.input]) : '空'} / 出力: ${m.output ? describe([m.output]) : '空'}`);
   }
   if (c.miner) parts.push(c.miner.state);
+  if (c.device) parts.push(c.device.state);
   if (c.power > 0) parts.push(`電力 ${c.power}`);
   if (c.unpowered) parts.push('電気が届いていません');
   if (c.wire) parts.push(`床: ${state.registry.building(c.wire).name}`);
