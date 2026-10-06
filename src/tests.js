@@ -14,6 +14,7 @@ import { buildBeltLines } from './core/belt.js';
 import { makeSnapshot } from './core/snapshot.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { Engine } from './worker/engine.js';
+import { loadSave, makeSave } from './core/save.js';
 
 const results = [];
 function test(name, fn) {
@@ -344,6 +345,39 @@ test('ベルトを撤去すると載っていた物はそのマスの床に落�
   sim.addItems(0, 0, 'ore', 3);
   removeAt(w, 0, 0);
   eq(total(sim.contentsAt(0, 0).ground), 3);
+});
+test('床に落ちた物の上にベルトを敷くと、ベルトに載って流れる', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');                     // 行き止まり → (1,0) の床へ落ちる
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  run(sim, 1);
+  eq(total(sim.contentsAt(1, 0).ground), 3);
+  put(w, 'belt', 1, 0, 'E'); put(w, 'belt', 2, 0, 'E');
+  eq(sim.contentsAt(1, 0).ground, [], '床に残っている');
+  eq(total(sim.contentsAt(1, 0).belt), 3);
+  run(sim, 1);
+  eq(total(sim.contentsAt(2, 0).belt), 3, '流れていない');
+  eq(sim.totals().onGround, 0);
+});
+test('ベルトを別の種類に置き換えても、落ちた中身は新しいベルトに載る', () => {
+  const w = simWorld();
+  put(w, 'belt', 0, 0, 'E');
+  const sim = new Sim(w, simReg);
+  sim.addItems(0, 0, 'ore', 3);
+  removeAt(w, 0, 0); put(w, 'stopBelt', 0, 0, 'E');  // 同じ sync の中で撤去と設置
+  eq(sim.contentsAt(0, 0).ground, []);
+  eq(total(sim.contentsAt(0, 0).belt), 3);
+});
+test('保存データでベルトの下に残っていた床の物も、読み込むとベルトに載る', () => {
+  const w = simWorld();
+  put(w, 'belt', 1, 0, 'E');
+  const sim = new Sim(w, simReg);
+  const saved = JSON.parse(JSON.stringify({ world: w, sim }));
+  saved.sim.ground = [{ x: 1, y: 0, stacks: [{ item: 'ore', count: 2 }] }];
+  const back = Sim.fromJSON(saved.sim, World.fromJSON(saved.world, simReg), simReg);
+  eq(back.contentsAt(1, 0).ground, []);
+  eq(total(back.contentsAt(1, 0).belt), 2);
 });
 test('回しても中身は消えない', () => {
   const w = simWorld();
@@ -747,6 +781,55 @@ test('エンジン: 命令で置く・回す・撤去・進めるができ、画
   eng.handle({ id: 10, op: 'clear' });
   eng.handle({ op: 'ack' });
   eq(sent.filter(m => m.type === 'view').pop().snap.count, 0);
+});
+
+/* ---- 保存・読込（Phase 6） ---- */
+test('セーブデータで盤面も中身も時間も採掘機の進み具合も元に戻る', () => {
+  const w = busyWorld();
+  const sim = new Sim(w, simReg);
+  sim.addItems(15, 5, 'ore', 4);
+  run(sim, 5);
+  for (let i = 0; i < 7; i++) sim.step();
+  const data = JSON.parse(JSON.stringify(makeSave(w, sim, new Date('2026-10-05T00:00:00Z'))));
+  eq([data.format, data.version, data.savedAt], ['industry-sim', 1, '2026-10-05T00:00:00.000Z']);
+  const back = loadSave(data, simReg);
+  eq(back.skipped, 0);
+  eq(back.world.count, w.count);
+  eq(back.sim.toJSON(), sim.toJSON());
+  ok(data.sim.miners.length > 0, '採掘機の進み具合が保存されていない');
+  // 続きを同じだけ進めても同じになる
+  run(sim, 3); run(back.sim, 3);
+  eq(back.sim.toJSON(), sim.toJSON(), '読み込んだ後の動きが違う');
+});
+test('セーブデータ: 違う形・新しすぎる形はエラー、知らない建物と重なる建物は飛ばす', () => {
+  let msg = '';
+  try { loadSave({ hello: 1 }, simReg); } catch (e) { msg = e.message; }
+  eq(msg, 'このアプリのセーブデータではありません');
+  try { loadSave({ format: 'industry-sim', version: 99, world: { width: 5, height: 5 } }, simReg); } catch (e) { msg = e.message; }
+  ok(msg.includes('新しい形式'), msg);
+  const r = loadSave({ format: 'industry-sim', version: 1, world: { width: 5, height: 5, buildings: [
+    { type: 'belt', x: 1, y: 1, dir: 'E' }, { type: 'nothing', x: 2, y: 2 }, { type: 'chest', x: 1, y: 1 },
+    { type: 'belt', x: 9, y: 9 }], resources: [{ x: 0, y: 0, item: 'ore' }, { x: 0, y: 1, item: 'nothing' }] }, sim: {} }, simReg);
+  eq([r.world.count, r.skipped, r.world.resources.size], [1, 3, 1]);
+});
+test('エンジン: 保存して、全消去して、読み込むと元に戻る。読めないデータでは今の盤面のまま', () => {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  const res = id => sent.find(m => m.re === id);
+  eng.handle({ id: 1, op: 'place', type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 2, y: 1, dir: 'E' }] });
+  eng.handle({ id: 2, op: 'items', x: 1, y: 1, item: 'ore', count: 3 });
+  const v0 = eng.version;
+  eng.handle({ id: 3, op: 'save' });
+  eq(eng.version, v0, '保存しただけで version が増えた');
+  const data = JSON.parse(JSON.stringify(res(3).result));
+  eng.handle({ id: 4, op: 'clear' });
+  eq(eng.world.count, 0);
+  eng.handle({ id: 5, op: 'load', data });
+  eq([res(5).result.count, res(5).result.skipped], [2, 0]);
+  eq(total(eng.sim.contentsAt(1, 1).belt), 3);
+  eng.handle({ id: 6, op: 'load', data: { format: 'other' } });
+  ok(res(6).error, '読めないデータでエラーにならない');
+  eq(eng.world.count, 2, '読めなかったのに盤面が変わった');
 });
 
 /* ---- registry（データを実際に読む） ---- */

@@ -35,11 +35,13 @@ my-application/
     │   ├─ machine.js    加工機
     │   ├─ miner.js      採掘機（鉱脈は world.resources）
     │   ├─ snapshot.js   画面に映る範囲の写し（Worker から画面へ送る）
+    │   ├─ save.js       セーブデータの形（Phase 6）
     │   └─ power.js      電力網（電線は world の床の層）
     ├─ worker/
     │   ├─ worker.js     Web Worker の入口（Phase 5b）
     │   └─ engine.js     World と Sim を持ち、命令を実行して時間を進める
     ├─ client.js         画面から Engine を呼ぶ窓口（Worker が使えなければ同じスレッドで動かす）
+    ├─ storage.js        ブラウザの中（IndexedDB）への保存
     ├─ render/
     │   ├─ renderer.js   World を**読むだけ**。Canvas に描く
     │   └─ view.js       Worker から届いた写しを World / Sim と同じ形に戻す
@@ -82,5 +84,5 @@ my-application/
 | 3 | Recipe / Machine / Production | 機械が材料を食べて製品を出す |
 | 4 | Power（Fluid / Storage は未定） | 発電機から電線で電気が届き、届かない機械は止まる |
 | 5 | Chunk / 最適化 / Web Worker | 大きなマップでも重くならない |
-| 6 | 保存・読込 / API | ワールドと設計図をサーバに保存 |
+| 6 | 保存・読込 / API | 6a: ブラウザの中とファイルに保存（済み）。6b: サーバに保存（必要になったら） |
 | 7 | 高度な物流 / 研究 / AI | — |

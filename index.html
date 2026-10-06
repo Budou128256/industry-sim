@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>工業シミュレーション基盤 — Phase 5</title>
+<title>工業シミュレーション基盤 — Phase 6</title>
 <style>
   :root{
     --bg:#0f1117; --panel:#161a23; --panel2:#1d222d; --line:#2a3140;
@@ -45,8 +45,9 @@
 <body>
 <header>
   <h1>工業シミュレーション基盤</h1>
-  <span class="sub">Phase 5b — Web Worker</span>
+  <span class="sub">Phase 6 — 保存・読込</span>
   <span class="sub" id="mode" title="シミュレータを動かしている場所"></span>
+  <span class="sub" id="saveState" title="このブラウザの中に5秒ごとに自動保存する（変わったときだけ）"></span>
 </header>
 
 <div class="wrap">
@@ -81,6 +82,9 @@
       <button id="btnPower" class="on" title="電気の届く範囲を薄い黄色で塗る">電力表示</button>
       <button id="btnRotate">回転 (R)</button>
       <button id="btnClear">全消去</button>
+      <button id="btnExport" title="盤面を .json ファイルに書き出す">書き出し</button>
+      <button id="btnImport" title=".json ファイルから盤面を読み込む（今の盤面と入れ替わる）">読み込み</button>
+      <input type="file" id="fileImport" accept=".json,application/json" hidden>
       <select id="itemSel" title="「アイテムを置く」で置く種類"></select>
       <span class="sub">建物 <b id="count">0</b></span>
       <span id="status">読み込み中…</span>

@@ -14,6 +14,7 @@
  * World は編集で変わる。step() の前に sync() で追いつく（変わった所の近くだけ計算し直す）。
  *   - 撤去された建物の中身は、その建物があったマスの床に落とす
  *   - 回転（撤去して同じ場所に置き直す）では中身を引き継ぐ
+ *   - 床に物が落ちているマスにベルトを敷くと、その物はベルトに載る
  */
 
 import { footprint, key, parseKey } from './grid.js';
@@ -187,6 +188,7 @@ export class Sim {
 
   /** 撤去された建物の中身を床へ落とし、置かれた建物の中身の入れ物を作る。回しただけなら引き継ぐ。 */
   applyContents(removed, added) {
+    const newBelts = [];
     for (const b of added) {
       // 同じ種類が同じ場所から消えていれば、回しただけ。中身を引き継ぐ
       const i = removed.findIndex(r => r.type === b.type && r.x === b.x && r.y === b.y);
@@ -196,7 +198,7 @@ export class Sim {
         continue;
       }
       const def = this.registry.building(b.type) || {};
-      if (def.belt) this.belts.set(b.id, []);
+      if (def.belt) { this.belts.set(b.id, []); newBelts.push(b); }
       if (def.container) this.containers.set(b.id, makeContainer(def.container.slots || 1));
       if (def.machine) this.machines.set(b.id, makeMachine());
       if (def.miner) this.miners.set(b.id, makeMiner());
@@ -215,6 +217,18 @@ export class Sim {
       this.machines.delete(r.id);
       this.miners.delete(r.id);
     }
+    // 床に落ちている物の上にベルトを敷いたら、その物はベルトに載って流れる。
+    // 撤去で落ちた物も拾えるよう、落とした後に拾う
+    for (const b of newBelts) this.pickUpGround(b);
+  }
+
+  /** ベルトのマスの床の物を、そのベルトの上へ移す。 */
+  pickUpGround(b) {
+    const list = this.belts.get(b.id);
+    const ground = this.groundAt(b.x, b.y);
+    if (!list || !ground) return;
+    for (const st of ground) pilePush(list, st.item, st.count, this.limit(st.item));
+    this.ground.delete(key(b.x, b.y));
   }
 
   move(fromId, toId) {
@@ -302,6 +316,8 @@ export class Sim {
       machines: [...this.machines].filter(([, m]) => m.input || m.output || m.progress)
         .map(([id, m]) => ({ ...at(id), input: m.input && { ...m.input },
                              output: m.output && { ...m.output }, progress: m.progress, state: m.state })),
+      miners: [...this.miners].filter(([, m]) => m.progress || m.cursor)
+        .map(([id, m]) => ({ ...at(id), progress: m.progress, cursor: m.cursor })),
       produced: { ...this.produced },
       ground: [...this.ground].filter(([, l]) => l.length).map(([k, l]) => {
         const { x, y } = parseKey(k);
@@ -332,8 +348,15 @@ export class Sim {
         progress: e.progress || 0, state: e.state || sim.machines.get(b.id).state,
       });
     }
+    for (const e of data.miners || []) {
+      const b = world.at(e.x, e.y);
+      if (!b || !sim.miners.has(b.id)) continue;
+      Object.assign(sim.miners.get(b.id), { progress: e.progress || 0, cursor: e.cursor || 0 });
+    }
     sim.produced = { ...(data.produced || {}) };
     for (const e of data.ground || []) sim.ground.set(key(e.x, e.y), e.stacks.map(s => ({ ...s })));
+    // 前の版で保存した、ベルトの下に残った床の物もベルトに載せる
+    world.forEach(b => { if (sim.belts.has(b.id)) sim.pickUpGround(b); });
     return sim;
   }
 }

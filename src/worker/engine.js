@@ -12,6 +12,7 @@ import { World } from '../core/world.js';
 import { Sim, TICK_HZ } from '../core/sim.js';
 import { PathPlacer, canPlace, place, removeAt, rotateAt } from '../core/placement.js';
 import { makeSnapshot } from '../core/snapshot.js';
+import { loadSave, makeSave } from '../core/save.js';
 import { key } from '../core/grid.js';
 
 /** 画面の範囲の外にも少し余分に入れる（電線のつながりや、端の建物を描くため）。 */
@@ -29,6 +30,7 @@ export class Engine {
     this.timer = null;
     this.waiting = false;     // 画面が前の写しを描き終えていない
     this.dirty = true;
+    this.version = 0;         // 変わるたびに増える（画面が「保存し直すべきか」を判断するのに使う）
   }
 
   reset() {
@@ -56,16 +58,18 @@ export class Engine {
     if (!this.dirty || this.waiting) return;
     this.dirty = false;
     this.waiting = true;
-    this.post({ type: 'view', snap: makeSnapshot(this.world, this.sim, this.rect) });
+    const snap = makeSnapshot(this.world, this.sim, this.rect);
+    snap.version = this.version;
+    this.post({ type: 'view', snap });
   }
 
-  changed() { this.dirty = true; }
+  changed() { this.dirty = true; this.version++; }
 
   /* ---------- 命令 ---------- */
 
   op_view({ rect }) {
     this.rect = { x0: rect.x0 - MARGIN, y0: rect.y0 - MARGIN, x1: rect.x1 + MARGIN, y1: rect.y1 + MARGIN };
-    this.changed();
+    this.dirty = true;          // 盤面は変わっていないので version は増やさない
   }
 
   /** cells: [{ x, y, dir }] を順に置く。戻り値: 置けた数と、最後に置けなかった理由 */
@@ -183,5 +187,22 @@ export class Engine {
       ground: c.ground,
       resource: c.resource || null,
     };
+  }
+
+  /** セーブデータを作る（Phase 6）。 */
+  op_save() {
+    return makeSave(this.world, this.sim);
+  }
+
+  /** セーブデータを読み込んで、今の盤面と入れ替える。形が違えばエラーで、今の盤面はそのまま。 */
+  op_load({ data }) {
+    const { world, sim, skipped, savedAt } = loadSave(data, this.registry);
+    this.op_pause();
+    this.drag = null;
+    this.world = world;
+    this.sim = sim;
+    this.size = { width: world.width, height: world.height };
+    this.changed();
+    return { count: world.count, skipped, savedAt, tick: sim.tick };
   }
 }
