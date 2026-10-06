@@ -31,13 +31,16 @@ export class World {
     this.resources = new ChunkLayer();
     /** 変更のたびに増える。描画側が「描き直すべきか」を判断するのに使う。 */
     this.revision = 0;
-    /** 変更の記録: { rev, op: 'add' | 'remove' | 'resource', building?, x?, y? }（古いものから捨てる） */
+    /** 変更の記録: { rev, op: 'add' | 'remove' | 'resource', building?, x?, y?, prev?, item? }（古いものから捨てる） */
+    /** 変更のたびに呼ぶ関数（無くてよい）。 */
+    this.onRecord = null;
     this.changes = [];
   }
 
   record(change) {
     change.rev = ++this.revision;
     this.changes.push(change);
+    if (this.onRecord) this.onRecord(change);      // 元に戻す（core/history.js）が変更を集めるのに使う
     if (this.changes.length > CHANGE_LOG_LIMIT * 2) this.changes.splice(0, this.changes.length - CHANGE_LOG_LIMIT);
   }
 
@@ -94,8 +97,9 @@ export class World {
   /** 鉱脈を置く。item が null なら取り除く。 */
   setResource(x, y, item) {
     if ((this.resources.get(x, y) || null) === item) return;
+    const prev = this.resources.get(x, y) || null;
     if (item) this.resources.set(x, y, item); else this.resources.delete(x, y);
-    this.record({ op: 'resource', x, y });
+    this.record({ op: 'resource', x, y, prev, item: item || null });
   }
 
   /** 置いてある建物を順に渡す。 */

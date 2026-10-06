@@ -1,7 +1,6 @@
 {
   "id": "copper-ore",
   "name": "銅鉱石(テスト)",
-  "stackSize": 100,
   "color": "#c07b4a",
   "resource": true
 }

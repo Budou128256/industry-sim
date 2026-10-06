@@ -24,6 +24,7 @@ const readJson = p => JSON.parse(fs.readFileSync(path.join(root, p), 'utf8'));
 function loadRegistry() {
   const reg = new Registry();
   const index = readJson('data/index.json');
+  if (fs.existsSync(path.join(root, 'data/game.json'))) reg.game = { ...reg.game, ...readJson('data/game.json') };
   for (const kind of ['items', 'buildings', 'recipes']) {
     for (const id of index[kind]) reg[kind].set(id, readJson(`data/${kind}/${id}.json`));
   }
@@ -102,7 +103,7 @@ const EXAMPLES = [
   {
     id: 'belt-splitter',
     name: '3. ベルトとスプリッター',
-    note: 'アームが箱から鉄鉱石を1スタック（100個）ずつベルトへ載せる。'
+    note: 'アームが箱から鉄鉱石を1スタック（ここでは500個。上限は9999）丸ごとベルトへ載せる。'
       + 'スプリッターは横から入った物を半分ずつ正面（上）と背面（下）へ送り、どちらもベルトの先で床に落ちる。'
       + '右下: 床に置いてあった銅鉱石の上にベルトを敷いてあり、載って流れる（曲がり角も）',
     build(reg) {

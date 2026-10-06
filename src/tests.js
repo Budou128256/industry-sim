@@ -17,7 +17,8 @@ import { wireColors } from './render/renderer.js';
 import { splitStack, splitterAccepts } from './core/splitter.js';
 import { captureBlueprint, checkBlueprint, flipBlueprint, moveArea, pasteBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
 import { Engine } from './worker/engine.js';
-import { loadSave, makeSave } from './core/save.js';
+import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
+import { stackLimit } from './core/inventory.js';
 
 const results = [];
 function test(name, fn) {
@@ -198,7 +199,7 @@ const simDefs = {
 };
 const simReg = {
   building: id => simDefs[id],
-  item: id => ({ ore: { id: 'ore', stackSize: 10 }, plate: { id: 'plate', stackSize: 10 } }[id]),
+  item: id => ({ ore: { id: 'ore', stackSize: 10, resource: true }, plate: { id: 'plate', stackSize: 10 } }[id]),
   recipes: new Map([['plate', { id: 'plate', inputs: { ore: 1 }, outputs: { plate: 1 }, craftTime: 1, machines: ['smelter', 'proc'] }]]),
 };
 function simWorld(w = 10, h = 3) { return new World({ width: w, height: h }); }
@@ -931,6 +932,101 @@ test('エンジン: まとめて移動（中身も）と、上書きの貼り付
   eq(eng.world.at(9, 9).type, 'belt');
 });
 
+/* ---- 元に戻す / やり直す ---- */
+function undoEngine() {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  let id = 100;
+  const call = (op, args = {}) => {
+    const n = ++id;
+    eng.handle({ id: n, op, ...args });
+    const r = sent.find(m => m.re === n);
+    if (r.error) throw new Error(r.error);
+    return r.result;
+  };
+  return { eng, call };
+}
+test('元に戻す: ドラッグで置いた分は1回で戻り、やり直すとまた置かれる', () => {
+  const { eng, call } = undoEngine();
+  call('dragStart', { type: 'belt', x: 1, y: 1, dir: 'E' });
+  call('dragTo', { cells: [{ x: 2, y: 1 }, { x: 3, y: 1 }] });
+  call('dragTo', { cells: [{ x: 3, y: 2 }] });
+  call('place', { type: 'chest', cells: [{ x: 8, y: 8 }] });
+  eq(eng.world.count, 5);
+  eq(call('undo').label, '設置');
+  eq(eng.world.count, 4, '箱だけ戻っていない');
+  const r = call('undo');
+  eq([r.done, eng.world.count, r.undo, r.redo], [true, 0, 0, 2], 'ドラッグが1回で戻っていない');
+  eq(call('undo').done, false);
+  call('redo');
+  eq([eng.world.count, eng.world.at(3, 1).dir, eng.world.at(3, 2).dir], [4, 'S', 'S'], '曲がり角の向きが戻っていない');
+  call('remove', { x: 1, y: 1 });
+  eq(call('redo').done, false, '新しい操作の後もやり直せる');
+});
+test('元に戻す: 撤去・回転・鉱脈を戻す（撤去した箱は空で戻り、中身は床のまま）', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 2, y: 2 }] });
+  call('place', { type: 'belt', cells: [{ x: 4, y: 2, dir: 'E' }] });
+  eng.sim.addItems(2, 2, 'ore', 5);
+  call('remove', { x: 2, y: 2 });
+  call('rotate', { x: 4, y: 2 });
+  call('resource', { item: 'ore', cells: [{ x: 6, y: 6 }] });
+  call('resource', { item: 'ore', cells: [{ x: 7, y: 6 }], group: true });
+  eq([eng.world.resourceAt(6, 6), eng.world.resourceAt(7, 6)], ['ore', 'ore']);
+  eq(call('undo').label, '鉱脈');
+  eq([eng.world.resourceAt(6, 6), eng.world.resourceAt(7, 6)], [null, null], '塗った鉱脈が1回で戻っていない');
+  call('undo');
+  eq(eng.world.at(4, 2).dir, 'E', '回転が戻っていない');
+  call('undo');
+  eq(eng.world.at(2, 2).type, 'chest', '撤去が戻っていない');
+  eng.sim.sync();
+  eq([total(eng.sim.contentsAt(2, 2).container.slots.filter(Boolean)), total(eng.sim.contentsAt(2, 2).ground)], [0, 5]);
+});
+test('元に戻す: まとめて移動を戻すと中身も元の場所へ戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 1, y: 1 }] });
+  eng.sim.addItems(1, 1, 'plate', 7);
+  call('move', { rect: { x0: 1, y0: 1, x1: 1, y1: 1 }, x: 5, y: 5 });
+  eq(eng.world.at(5, 5).type, 'chest');
+  eq(call('undo').label, '移動');
+  eq([eng.world.at(5, 5), eng.world.at(1, 1).type], [null, 'chest']);
+  eng.sim.sync();
+  eq(total(eng.sim.contentsAt(1, 1).container.slots.filter(Boolean)), 7, '中身が戻っていない');
+  call('redo');
+  eng.sim.sync();
+  eq(total(eng.sim.contentsAt(5, 5).container.slots.filter(Boolean)), 7, 'やり直しで中身が付いてこない');
+});
+test('元に戻す: 全消去と読み込みは、中身ごと前の盤面へ戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 1, y: 1 }] });
+  eng.sim.addItems(1, 1, 'ore', 3);
+  const save = call('save');
+  call('clear');
+  eq(eng.world.count, 0);
+  eq(call('undo').label, '全消去');
+  eq(total(eng.sim.contentsAt(1, 1).container.slots.filter(Boolean)), 3, '全消去の前の中身が戻っていない');
+  call('redo');
+  eq(eng.world.count, 0, 'やり直しで消えない');
+  call('load', { data: save });
+  eq(eng.world.count, 1);
+  eq(call('undo').label, '読み込み');
+  eq(eng.world.count, 0, '読み込みの前に戻っていない');
+  call('load', { data: save, record: false });
+  eq(call('undo').done, false, '起動時の読み込みが記録に残った');
+});
+test('元に戻す: 貼り付け・切り取りも1回ずつ戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 2, y: 1, dir: 'E' }] });
+  const bp = call('copy', { rect: { x0: 1, y0: 1, x1: 2, y1: 1 } });
+  call('paste', { blueprint: bp, x: 5, y: 5 });
+  call('removeArea', { rect: { x0: 1, y0: 1, x1: 2, y1: 1 }, label: '切り取り' });
+  eq(eng.world.count, 2);
+  eq(call('undo').label, '切り取り');
+  eq(eng.world.count, 4);
+  eq(call('undo').label, '貼り付け');
+  eq([eng.world.count, eng.world.at(5, 5)], [2, null]);
+});
+
 /* ---- 送り出し加工機 ---- */
 test('送り出し加工機: できた製品を正面へ送り出す（ベルトなら上へ、それ以外は床へ）', () => {
   const w = simWorld(10, 5);
@@ -1081,6 +1177,77 @@ test('エンジン: 保存して、全消去して、読み込むと元に戻る
   eq(eng.world.count, 2, '読めなかったのに盤面が変わった');
 });
 
+/* ---- 盤面の大きさ ---- */
+test('盤面を広げても、建物・中身・鉱脈・床の物・時間はそのまま', () => {
+  const w = simWorld(10, 10);
+  put(w, 'belt', 1, 1, 'E'); put(w, 'chest', 5, 5);
+  w.setResource(2, 2, 'ore');
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 1, 'ore', 3); sim.addItems(5, 5, 'plate', 4); sim.addItems(8, 8, 'ore', 2);
+  for (let i = 0; i < 7; i++) sim.step();
+  const r = resizeSave(w, sim, simReg, 30, 20);
+  eq([r.world.width, r.world.height, r.world.count, r.skipped], [30, 20, 2, 0]);
+  eq(r.sim.toJSON(), sim.toJSON());
+  eq(r.world.resourceAt(2, 2), 'ore');
+  ok(canPlace(r.world, simDefs.chest, 29, 19).ok, '広げた所に置けない');
+  eq([w.width, w.height], [10, 10], '元の World が変わった');
+});
+test('盤面を縮めると、はみ出す建物は中身ごと、はみ出す鉱脈・床の物も消える', () => {
+  const w = simWorld(20, 20);
+  put(w, 'belt', 1, 1, 'E'); put(w, 'chest', 18, 1); put(w, 'smelter', 9, 4);   // 2x2 は (9..10, 4..5)
+  w.setResource(2, 2, 'ore'); w.setResource(19, 19, 'ore');
+  const sim = new Sim(w, simReg);
+  sim.addItems(18, 1, 'plate', 4); sim.addItems(1, 3, 'ore', 2); sim.addItems(15, 7, 'ore', 5);
+  eq(countOutside(w, 10, 20), 2, '箱と、半分はみ出す 2x2 を数えていない');
+  eq(countOutside(w, 11, 11), 1);
+  const r = resizeSave(w, sim, simReg, 10, 20);
+  eq([r.world.count, r.skipped], [1, 2]);
+  eq(r.world.resourceAt(2, 2), 'ore');
+  eq(r.world.resourceAt(19, 19) || null, null);
+  eq(r.sim.totals().onGround, 2, '外の床の物が残った / 中の床の物が消えた');
+  eq(r.sim.totals().inContainers, 0);
+});
+test('盤面の大きさは 8〜1024 の整数だけ', () => {
+  eq(checkSize(8, 1024), null);
+  ok(checkSize(7, 10), '小さすぎるのに通った');
+  ok(checkSize(10, 1025), '大きすぎるのに通った');
+  ok(checkSize(10.5, 10), '整数でないのに通った');
+  ok(checkSize('20', 10), '文字なのに通った');
+});
+test('エンジン: 下見では変えず、変えた後の全消去も新しい大きさのまま', () => {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  const res = id => sent.find(m => m.re === id);
+  eng.handle({ id: 1, op: 'place', type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 15, y: 1, dir: 'E' }] });
+  const v0 = eng.version;
+  eng.handle({ id: 2, op: 'resize', width: 10, height: 10, dryRun: true });
+  eq(res(2).result, { lost: 1 });
+  eq([eng.world.width, eng.world.count, eng.version], [20, 2, v0], '下見なのに変わった');
+  eng.handle({ id: 3, op: 'resize', width: 10, height: 12 });
+  eq(res(3).result, { width: 10, height: 12, lost: 1, count: 1 });
+  eng.handle({ id: 4, op: 'resize', width: 3, height: 12 });
+  ok(res(4).error, '小さすぎるのにエラーにならない');
+  eq(eng.world.width, 10);
+  eng.handle({ id: 5, op: 'clear' });
+  eq([eng.world.width, eng.world.height], [10, 12], '全消去で元の大きさに戻った');
+  eng.handle({ op: 'ack' });
+  const snap = sent.filter(m => m.type === 'view').pop().snap;
+  eq([snap.width, snap.height], [10, 12]);
+});
+
+test('元に戻す: 盤面の大きさの変更を戻すと、消えた建物も中身ごと戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 15, y: 5 }] });
+  eng.sim.addItems(15, 5, 'plate', 6);
+  call('resize', { width: 10, height: 10 });
+  eq(eng.world.count, 0);
+  eq(call('undo').label, '大きさの変更');
+  eq([eng.world.width, eng.world.count], [20, 1]);
+  eq(total(eng.sim.contentsAt(15, 5).container.slots.filter(Boolean)), 6);
+  call('redo');
+  eq([eng.world.width, eng.world.count], [10, 0]);
+});
+
 /* ---- registry（データを実際に読む） ---- */
 const reg = await Registry.load('data');
 test('data/ を読める', () => {
@@ -1104,6 +1271,13 @@ test('ベルト・アーム・保管箱の挙動が data に書いてある', ()
   ok(reg.building('wire') && reg.building('wire').layer === 'floor', '電線が床の層にない');
   ok(reg.building('inserter').power.needs && reg.building('miner').power.needs, 'アーム・採掘機が電気を要らない');
   ok(!reg.building('belt').power && !reg.building('furnace').power, 'ベルト・炉が電気を要る');
+});
+test('ゲームの設定（data/game.json）: 1スタックの上限は Core Keeper に合わせて 9999。アイテムに書けばそちらが優先', () => {
+  eq([reg.game.id, reg.game.defaults.stackSize], ['core-keeper', 9999]);
+  eq(stackLimit(reg, 'iron-ore'), 9999);
+  const r2 = { item: () => ({ id: 'x', stackSize: 50 }), game: reg.game };
+  eq(stackLimit(r2, 'x'), 50, 'アイテムの値が優先されない');
+  eq(stackLimit({ item: () => ({ id: 'y' }) }, 'y'), 100, 'game.json が無いときの既定値');
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {

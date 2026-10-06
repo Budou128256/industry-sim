@@ -1,7 +1,6 @@
 {
   "id": "coal",
   "name": "石炭(テスト)",
-  "stackSize": 100,
   "color": "#3b3b45",
   "resource": true
 }

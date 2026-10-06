@@ -101,6 +101,8 @@ async function main() {
   $('btnCut').onclick = () => onCommand({ type: 'cut' });
   $('btnDelete').onclick = () => onCommand({ type: 'delete' });
   $('btnPaste').onclick = () => onCommand({ type: 'paste' });
+  $('btnUndo').onclick = () => onCommand({ type: 'undo' });
+  $('btnRedo').onclick = () => onCommand({ type: 'redo' });
   $('btnMove').onclick = () => onCommand({ type: 'move' });
   $('btnPRot').onclick = () => onCommand({ type: 'rotate', ...(state.renderer.hover || { x: -1, y: -1 }) });
   $('btnFlipH').onclick = () => onCommand({ type: 'flip', axis: 'h' });
@@ -112,6 +114,8 @@ async function main() {
   updateSelButtons();
   refreshBlueprints();
   refreshExamples();
+  $('btnResize').onclick = resizeBoard;
+  for (const id of ['boardW', 'boardH']) $(id).onkeydown = e => { if (e.key === 'Enter') resizeBoard(); };
 
   $('btnExport').onclick = exportFile;
   $('btnImport').onclick = () => $('fileImport').click();
@@ -155,7 +159,7 @@ async function restoreAutosave() {
   }
   if (!data) return;
   try {
-    const r = await state.client.call('load', { data });
+    const r = await state.client.call('load', { data, record: false });
     status(`前回の続きを読み込みました（${when(r.savedAt)} に保存・建物 ${r.count}）`
       + (r.skipped ? ` — 知らない・置けない建物 ${r.skipped} 個を飛ばしました` : ''), !!r.skipped);
   } catch (e) {
@@ -248,16 +252,56 @@ async function openExample(ex) {
     const res = await fetch(ex.file, { cache: 'no-store' });
     if (!res.ok) throw new Error(`${ex.file} を読めません (${res.status})`);
     const data = await res.json();
+    // 見本は小さく作ってあるので、盤面は今の大きさのまま（見本の方が大きいときだけ広げる）。左上に置く
+    const exW = data.world.width, exH = data.world.height;
+    const now = state.view.world;
+    data.world.width = Math.max(exW, now.width || 0);
+    data.world.height = Math.max(exH, now.height || 0);
     stop();
     selectBuilding(null);
     setSelection(null);
     await state.client.call('load', { data });
-    state.renderer.fitTo(data.world.width, data.world.height);
+    state.renderer.fitTo(exW, exH);
     sendView(); draw();
     status(`見本「${ex.name}」を開きました。▶ 再生で動きます — ${ex.note || ''}`);
     autosave();
   } catch (e) {
     status(`見本を開けません: ${e.message}`, true);
+  }
+}
+
+/* ---------- 盤面の大きさ ---------- */
+
+/** 入力された大きさに変える。はみ出して消える建物があれば先に確かめる。 */
+async function resizeBoard() {
+  const width = Number($('boardW').value), height = Number($('boardH').value);
+  const w = state.view.world;
+  if (width === w.width && height === w.height) { status(`盤面はもう ${width}x${height} です`); return; }
+  try {
+    const { lost } = await state.client.call('resize', { width, height, dryRun: true });
+    if (lost && !await askConfirm({
+      title: '盤面の大きさを変える', message: `${width}x${height} にすると、盤面の外になる建物 ${lost} 個が中身ごと消えます（元に戻すで戻せます）。`,
+      ok: '変える', danger: true,
+    })) {
+      showSize(w.width, w.height);
+      status('大きさを変えるのをやめました');
+      return;
+    }
+    const r = await state.client.call('resize', { width, height });
+    if (['boardW', 'boardH'].includes(document.activeElement.id)) document.activeElement.blur();   // 続けて Ctrl+Z などが盤面に届くように
+    status(`盤面を ${r.width}x${r.height} にしました` + (r.lost ? `（建物 ${r.lost} 個が消えました）` : ''));
+    autosave();
+  } catch (e) {
+    status(e.message, true);
+    showSize(w.width, w.height);
+  }
+}
+
+/** 大きさの入力欄に今の大きさを出す（入力中は触らない）。 */
+function showSize(width, height) {
+  for (const [id, v] of [['boardW', width], ['boardH', height]]) {
+    const el = $(id);
+    if (el && document.activeElement !== el) el.value = v;
   }
 }
 
@@ -381,6 +425,7 @@ function onCommand(cmd) {
       else status('コピーした範囲がありません（範囲を選んで Ctrl+C）', true);
       return;
     case 'move': startMove(renderer.hover, false); return;
+    case 'undo': case 'redo': undoRedo(cmd.type); return;
     case 'flip':
       status('反転（V・ボタン）は、貼り付け中（Ctrl+V）か移動中（M）に使えます');
       return;
@@ -457,6 +502,17 @@ function onCommand(cmd) {
   }
 }
 
+/* ---------- 元に戻す / やり直す（中身は core/history.js） ---------- */
+
+async function undoRedo(kind) {
+  if (state.paste) exitPaste(true);
+  const r = await state.client.call(kind);
+  const word = kind === 'undo' ? '元に戻しました' : 'やり直しました';
+  if (!r.done) { status(kind === 'undo' ? 'これ以上は戻せません' : 'やり直せる操作がありません'); return; }
+  status(`「${r.label}」を${word}（戻せる ${r.undo}・やり直せる ${r.redo}）`
+    + (r.skipped ? ` — その後に置いた物と重なるなどで ${r.skipped} 個は戻せませんでした` : ''), !!r.skipped);
+}
+
 /* ---------- 範囲選択・コピー・貼り付け・設計図 ---------- */
 
 function setSelection(rect) {
@@ -484,7 +540,7 @@ async function copySelection(cut) {
   const bp = await state.client.call('copy', { rect: state.selection });
   if (!bp.buildings.length) { status('範囲の中に（全部が入っている）建物がありません', true); return; }
   state.clipboard = bp;
-  if (cut) await state.client.call('removeArea', { rect: state.selection });
+  if (cut) await state.client.call('removeArea', { rect: state.selection, label: '切り取り' });
   updateSelButtons();
   status(`建物 ${bp.buildings.length} 個を${cut ? '切り取り' : 'コピー'}しました（${bp.width}x${bp.height}）。Ctrl+V で貼ります`);
   if (cut) setSelection(null);
@@ -747,7 +803,7 @@ async function addItems(x, y) {
 
 async function setResource(cells, quiet = false) {
   const item = $('itemSel').value;
-  const { ok } = await state.client.call('resource', { item, cells });
+  const { ok } = await state.client.call('resource', { item, cells, group: quiet });   // ドラッグの続きは1回の操作にまとめる
   if (!ok) {
     status(`${itemName(item)} は鉱脈になりません（data/items で resource: true のものだけ）`, true);
     return;
@@ -891,7 +947,9 @@ async function inspect(x, y) {
 }
 
 function setView(snap) {
+  const old = state.view && state.view.world;
   state.view = { world: new ViewWorld(snap), sim: new ViewSim(snap) };
+  if (!old || old.width !== snap.width || old.height !== snap.height) showSize(snap.width, snap.height);
 }
 
 /** 画面に映る範囲が変わったら Worker に伝える（その範囲の写しが返ってくる）。 */
