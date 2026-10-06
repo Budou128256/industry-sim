@@ -183,8 +183,10 @@
   "containers": [],
   "machines": [],
   "miners": [],
+  "levers": [],
   "splitters": [],
   "produced": {},
+  "destroyed": {},
   "ground": []
  },
  "name": "4. 全部つなげた小さな工場",

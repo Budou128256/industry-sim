@@ -200,8 +200,10 @@
   ],
   "machines": [],
   "miners": [],
+  "levers": [],
   "splitters": [],
   "produced": {},
+  "destroyed": {},
   "ground": []
  },
  "name": "3. ベルトとスプリッター",

@@ -249,8 +249,10 @@
   "containers": [],
   "machines": [],
   "miners": [],
+  "levers": [],
   "splitters": [],
   "produced": {},
+  "destroyed": {},
   "ground": []
  },
  "name": "1. 採掘機と電気",

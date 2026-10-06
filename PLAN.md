@@ -173,14 +173,27 @@
 | 残っている重さ | 大きな電線網（1つの網が数千マス）の中を編集すると、その網全体を計算し直す（4,000マスで約6 ms）。1 tick の処理そのもの（512x512 で約10 ms、1秒に20回）は 5b 以降 |
 | 入れていないもの | 盤面の大きさを画面から変える操作（2026-10-06 に入れた）、無限に広い盤面 |
 
-## 製材機（2026-10-06、ユーザーの依頼「機械などを追加したい」）
+## 機械の追加（2026-10-06、ユーザーの依頼「機械などを追加したい」→「上から順番に1〜6」）
 
-| 項目 | 内容 |
-|---|---|
-| 候補 | Core Keeper の自動化の機械から、製材機・回収機・焼却炉・粉砕機・論理回路などをユーザーに出した（出典: [Robot Arm のページの一覧](https://corekeeper.atma.gg/en/Robot_Arm)）。最初は製材機（おすすめ）で進め、選び直しに備える |
-| 製材機 | `table-saw`。電気で木材を板にする（出典: [Table Saw](https://corekeeper.atma.gg/en/Table_Saw)）。**コードは変えず data を足しただけ**: 建物 `table-saw.json`（`machine` と `power.needs`）・アイテム `wood` / `plank`・レシピ `plank`（`machines: ["table-saw"]`、10秒）。加工の時間は資料に無く、今の決まり（10秒）に合わせた |
-| 木材の入手 | 木を切る仕組みは無いので、箱に入れておく（見本5） |
-| 見本 | 5. 製材機。電気の届く段と、届かない段 |
+候補は Core Keeper の自動化の機械（出典: [Robot Arm のページの一覧](https://corekeeper.atma.gg/en/Robot_Arm)）。ユーザーの指定: **加工時間などは炉と同じ（10秒）**。資料に無いところは仮に決め、data で変えられるようにした。
+
+| 機械 | 決めたこと | 出典 |
+|---|---|---|
+| 製材機 `table-saw` | 木材→板。炉と同じ仕組みで、**data を足しただけ**（コードは変えていない）。電気が要る | [Table Saw](https://corekeeper.atma.gg/en/Table_Saw) |
+| 回収機 `collector` | 正面の 5x5 マスの**床の物**を、背面のマスへまとめて移す（アームの置き方と同じ。箱なら中へ）。間隔は資料に無く**仮に1秒**。電気が要る（`core/collector.js`） | [Item Collector](https://corekeeper.atma.gg/en/Item_Collector) |
+| 焼却炉 `incinerator` | どんな物でも入り、**10秒に1個**消す（炉と同じ間隔）。物の入れ方は資料に無く、炉と同じくアームで入れる。消した数は `sim.destroyed`。`machine.incinerate` | [Incinerator](https://corekeeper.atma.gg/en/Incinerator) |
+| 粉砕機 `shredder` | ユーザーの指定: 「スクラップ用アイテム」を入れると**2〜3種類**の物にして、**向いている方向（正面）へ**出す。1個10秒。製品が何種類もあるレシピは、正面へ送り出す機械（`outputFront`）だけが扱える。今は A→鉄板2・銅板1・スクラップ部品1、B→銅板1・スクラップ部品2（テスト用） | [Shredder](https://corekeeper.atma.gg/en/Shredder)（何が出るかは資料に無い） |
+| レバー `lever` | 説明文どおり**入っているときだけ電気を通す**。置いた直後は切れている。何も選ばずにクリックで入り切り。保存される。資料には「v1.0.0.8 ではレバーだけで機械が動く」という注記もあるが採らなかった | [Lever](https://corekeeper.atma.gg/en/Lever) |
+| 感圧板 `pressure-plate` | 人が踏むと弱い電気を出す。人はいないので**そのマスの床に物があるあいだ**電源になる。強さは仮に 5 | [Pressure Plate](https://corekeeper.atma.gg/en/Pressure_Plate) |
+| 論理回路 `logic-circuit` | 3つの入力（左・右・背面）の**ちょうど2つ**に電気が来ると正面へ出す。入出力の向きは資料に無く仮に決めた | [Logic Circuit](https://corekeeper.atma.gg/en/Logic_Circuit) |
+| 遅延回路 `delay-circuit` | 背面の電気を**1秒遅れて**正面へ出す（「1秒の間隔で送り出す」を遅れと読んだ） | [Delay Circuit](https://corekeeper.atma.gg/en/Delay_Circuit) |
+| 交差回路 `cross-circuit` | 縦と横を混ぜず、来た向きのまままっすぐ通す | [Cross Circuit](https://corekeeper.atma.gg/en/Cross_Circuit) |
+| 簡易ドリル `crude-drill` | 採掘機の半分の速さ（**4秒に1個**）。資料で簡易ドリルは毎秒3ダメージ、ドリルは2秒に12ダメージ（毎秒6）なので半分にした | [Crude Drill](https://corekeeper.atma.gg/en/Crude_Drill) |
+
+- 回路の計算（`core/signal.js`）: 部品が盤面に1つでもあると、電気の届き方を盤面全体で計算し直す（差分計算はしない）。計算し直すのは、盤面・レバー・感圧板・遅延回路の出力が変わったときだけ。回路から出る電気の強さは「入った強さ − 1」（仮）。論理回路どうしの輪は、最大8回くり返して止める
+- T・L・I 回路、近接センサー、電気扉、ランプなどは未実装
+- 木を切る仕組みは無いので、木材は箱に入れておく
+- 見本: 5. 製材機、6. 新しい機械まとめ（ユーザーの依頼。全部を1つの盤面で確かめる）
 
 ## 1スタックの上限とゲームごとの値（2026-10-06、ユーザーの選択）
 

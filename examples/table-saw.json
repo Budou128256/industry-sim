@@ -162,8 +162,10 @@
   ],
   "machines": [],
   "miners": [],
+  "levers": [],
   "splitters": [],
   "produced": {},
+  "destroyed": {},
   "ground": []
  },
  "name": "5. 製材機",

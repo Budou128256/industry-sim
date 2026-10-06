@@ -1,0 +1,789 @@
+{
+ "format": "industry-sim",
+ "version": 1,
+ "savedAt": "2026-10-06T00:00:00.000Z",
+ "world": {
+  "version": 1,
+  "width": 34,
+  "height": 22,
+  "buildings": [
+   {
+    "type": "generator",
+    "x": 1,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 2,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 3,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 5,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 6,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 7,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 8,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 9,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 10,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 11,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 12,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 13,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 14,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 15,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 16,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 17,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 18,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 19,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 20,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 21,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 22,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 23,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 24,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 25,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 26,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 27,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 28,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 29,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 30,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "generator",
+    "x": 31,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 2,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 3,
+    "y": 2,
+    "dir": "W"
+   },
+   {
+    "type": "table-saw",
+    "x": 4,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 5,
+    "y": 2,
+    "dir": "W"
+   },
+   {
+    "type": "chest",
+    "x": 6,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 8,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 9,
+    "y": 2,
+    "dir": "W"
+   },
+   {
+    "type": "incinerator",
+    "x": 10,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 12,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 13,
+    "y": 2,
+    "dir": "W"
+   },
+   {
+    "type": "shredder",
+    "x": 14,
+    "y": 2,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 3,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 4,
+    "dir": "S"
+   },
+   {
+    "type": "chest",
+    "x": 16,
+    "y": 2,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 17,
+    "y": 2,
+    "dir": "W"
+   },
+   {
+    "type": "shredder",
+    "x": 18,
+    "y": 2,
+    "dir": "S"
+   },
+   {
+    "type": "collector",
+    "x": 22,
+    "y": 2,
+    "dir": "S"
+   },
+   {
+    "type": "chest",
+    "x": 22,
+    "y": 1,
+    "dir": "N"
+   },
+   {
+    "type": "crude-drill",
+    "x": 28,
+    "y": 2,
+    "dir": "W"
+   },
+   {
+    "type": "miner",
+    "x": 28,
+    "y": 3,
+    "dir": "W"
+   },
+   {
+    "type": "generator",
+    "x": 1,
+    "y": 11,
+    "dir": "N"
+   },
+   {
+    "type": "lever",
+    "x": 2,
+    "y": 11,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 3,
+    "y": 11,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 11,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 5,
+    "y": 11,
+    "dir": "E"
+   },
+   {
+    "type": "generator",
+    "x": 1,
+    "y": 14,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 2,
+    "y": 14,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 3,
+    "y": 14,
+    "dir": "N"
+   },
+   {
+    "type": "cross-circuit",
+    "x": 4,
+    "y": 14,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 5,
+    "y": 14,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 6,
+    "y": 14,
+    "dir": "E"
+   },
+   {
+    "type": "inserter",
+    "x": 4,
+    "y": 13,
+    "dir": "E"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 16,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 4,
+    "y": 17,
+    "dir": "E"
+   },
+   {
+    "type": "logic-circuit",
+    "x": 15,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 15,
+    "y": 14,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 15,
+    "y": 13,
+    "dir": "E"
+   },
+   {
+    "type": "generator",
+    "x": 11,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "lever",
+    "x": 12,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 13,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 14,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "generator",
+    "x": 19,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "lever",
+    "x": 18,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 16,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 17,
+    "y": 15,
+    "dir": "N"
+   },
+   {
+    "type": "generator",
+    "x": 15,
+    "y": 19,
+    "dir": "N"
+   },
+   {
+    "type": "lever",
+    "x": 15,
+    "y": 18,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 15,
+    "y": 16,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 15,
+    "y": 17,
+    "dir": "N"
+   },
+   {
+    "type": "generator",
+    "x": 22,
+    "y": 12,
+    "dir": "N"
+   },
+   {
+    "type": "lever",
+    "x": 23,
+    "y": 12,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 24,
+    "y": 12,
+    "dir": "N"
+   },
+   {
+    "type": "delay-circuit",
+    "x": 25,
+    "y": 12,
+    "dir": "E"
+   },
+   {
+    "type": "wire",
+    "x": 26,
+    "y": 12,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 27,
+    "y": 12,
+    "dir": "E"
+   },
+   {
+    "type": "chest",
+    "x": 22,
+    "y": 16,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 23,
+    "y": 16,
+    "dir": "W"
+   },
+   {
+    "type": "generator",
+    "x": 23,
+    "y": 17,
+    "dir": "N"
+   },
+   {
+    "type": "pressure-plate",
+    "x": 24,
+    "y": 16,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 25,
+    "y": 16,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 26,
+    "y": 16,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 27,
+    "y": 16,
+    "dir": "E"
+   }
+  ],
+  "resources": [
+   {
+    "x": 27,
+    "y": 2,
+    "item": "iron-ore"
+   },
+   {
+    "x": 27,
+    "y": 3,
+    "item": "iron-ore"
+   }
+  ]
+ },
+ "sim": {
+  "version": 1,
+  "tick": 0,
+  "belts": [],
+  "containers": [
+   {
+    "x": 2,
+    "y": 2,
+    "slots": [
+     {
+      "item": "wood",
+      "count": 30
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "x": 8,
+    "y": 2,
+    "slots": [
+     {
+      "item": "coal",
+      "count": 20
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "x": 12,
+    "y": 2,
+    "slots": [
+     {
+      "item": "scrap-a",
+      "count": 10
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "x": 16,
+    "y": 2,
+    "slots": [
+     {
+      "item": "scrap-b",
+      "count": 10
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "x": 22,
+    "y": 16,
+    "slots": [
+     {
+      "item": "coal",
+      "count": 50
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   }
+  ],
+  "machines": [],
+  "miners": [],
+  "levers": [
+   {
+    "x": 12,
+    "y": 15
+   },
+   {
+    "x": 18,
+    "y": 15
+   }
+  ],
+  "splitters": [],
+  "produced": {},
+  "destroyed": {},
+  "ground": [
+   {
+    "x": 20,
+    "y": 4,
+    "stacks": [
+     {
+      "item": "iron-ore",
+      "count": 5
+     }
+    ]
+   },
+   {
+    "x": 23,
+    "y": 6,
+    "stacks": [
+     {
+      "item": "coal",
+      "count": 3
+     }
+    ]
+   },
+   {
+    "x": 24,
+    "y": 7,
+    "stacks": [
+     {
+      "item": "copper-ore",
+      "count": 2
+     }
+    ]
+   },
+   {
+    "x": 22,
+    "y": 9,
+    "stacks": [
+     {
+      "item": "coal",
+      "count": 4
+     }
+    ]
+   }
+  ]
+ },
+ "name": "6. 新しい機械まとめ",
+ "note": "上の段（左から）: 製材機（木材→板）、焼却炉（石炭を10秒に1個消す）、粉砕機2台（スクラップ用アイテムA→3種類・B→2種類を下へ送り出す）、回収機（下向き。点線の5x5の床の物を、1秒ごとに背面の箱へ。点線の外の石炭は残る）、簡易ドリルと採掘機（簡易ドリルは半分の速さ）。下の段の回路は、電気が届くとアーム（電気の印）の赤い × が消える。左上の丸が緑なら入っている。レバーは何も選んでいないときにクリックで入り切り。左から: レバー1つ、交差回路（横だけ通り縦には漏れない）、論理回路（左・右・背面のレバーのうちちょうど2つ入ると上へ出す。最初は左と右が入っている）、遅延回路（レバーを入れて1秒後に右へ出る）、感圧板（アームが石炭を載せると電気を出す）"
+}

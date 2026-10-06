@@ -225,8 +225,10 @@
   ],
   "machines": [],
   "miners": [],
+  "levers": [],
   "splitters": [],
   "produced": {},
+  "destroyed": {},
   "ground": []
  },
  "name": "2. 炉と送り出し加工機",
