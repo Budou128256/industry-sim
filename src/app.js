@@ -252,11 +252,16 @@ async function openExample(ex) {
     const res = await fetch(ex.file, { cache: 'no-store' });
     if (!res.ok) throw new Error(`${ex.file} を読めません (${res.status})`);
     const data = await res.json();
+    // 見本は小さく作ってあるので、盤面は今の大きさのまま（見本の方が大きいときだけ広げる）。左上に置く
+    const exW = data.world.width, exH = data.world.height;
+    const now = state.view.world;
+    data.world.width = Math.max(exW, now.width || 0);
+    data.world.height = Math.max(exH, now.height || 0);
     stop();
     selectBuilding(null);
     setSelection(null);
     await state.client.call('load', { data });
-    state.renderer.fitTo(data.world.width, data.world.height);
+    state.renderer.fitTo(exW, exH);
     sendView(); draw();
     status(`見本「${ex.name}」を開きました。▶ 再生で動きます — ${ex.note || ''}`);
     autosave();
