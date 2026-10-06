@@ -41,6 +41,11 @@ export function saveLocal(name, data) {
   return run('readwrite', s => s.put(data, name));
 }
 
+/** 名前が prefix で始まるものの名前の一覧。 */
+export function listLocal(prefix = '') {
+  return run('readonly', s => s.getAllKeys()).then(keys => keys.filter(k => typeof k === 'string' && k.startsWith(prefix)).sort());
+}
+
 export function removeLocal(name) {
   return run('readwrite', s => s.delete(name));
 }

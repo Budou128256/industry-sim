@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>工業シミュレーション基盤 — Phase 7a</title>
+<title>工業シミュレーション基盤 — Phase 7b</title>
 <style>
   :root{
     --bg:#0f1117; --panel:#161a23; --panel2:#1d222d; --line:#2a3140;
@@ -35,6 +35,12 @@
   .pal i{width:16px;height:16px;border-radius:3px;border:1px solid rgba(0,0,0,.4);flex:none}
   .pal .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pal .sz{color:var(--muted);font-size:11px}
+  .selbtns{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 6px}
+  .selbtns button{padding:3px 7px;font-size:12px}
+  button:disabled{opacity:.4;cursor:default}
+  .bp{display:flex;align-items:center;gap:4px;margin-bottom:3px}
+  .bp .pal{flex:1;min-width:0;margin:0}
+  .bp .mini{padding:2px 6px;font-size:11px;flex:none}
   .hint{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.8}
   .bar > *{flex:none;white-space:nowrap}
   /* 長い文が入っても1行のまま（バーの高さが変わると盤面がずれる） */
@@ -45,7 +51,7 @@
 <body>
 <header>
   <h1>工業シミュレーション基盤</h1>
-  <span class="sub">Phase 7a — ベルトの分岐</span>
+  <span class="sub">Phase 7b — 範囲選択・設計図</span>
   <span class="sub" id="mode" title="シミュレータを動かしている場所"></span>
   <span class="sub" id="saveState" title="このブラウザの中に5秒ごとに自動保存する（変わったときだけ）"></span>
 </header>
@@ -53,12 +59,31 @@
 <div class="wrap">
   <aside>
     <div id="palette"></div>
+    <div class="group">範囲選択・設計図</div>
+    <button class="pal" id="toolSelect" data-id="__select"><i style="background:#38bdf8"></i><span class="n">範囲を選ぶ</span><span class="sz">ドラッグ</span></button>
+    <div class="selbtns">
+      <button id="btnCopy" title="Ctrl+C">コピー</button>
+      <button id="btnCut" title="Ctrl+X">切り取り</button>
+      <button id="btnDelete" title="Delete">削除</button>
+      <button id="btnPaste" title="Ctrl+V">貼り付け</button>
+      <button id="btnSaveBp" title="選んだ範囲に名前を付けて、このブラウザの中に保存する">設計図として保存</button>
+    </div>
+    <div id="bpList"></div>
+    <div class="group">画面</div>
+    <div class="selbtns">
+      <button id="btnFit" title="F / Home">全体を表示 (F)</button>
+      <button id="btnZoomIn" title="+">拡大 (+)</button>
+      <button id="btnZoomOut" title="-">縮小 (-)</button>
+    </div>
     <div class="hint">
       左クリック: 設置（ドラッグで通った道どおりに連続）<br>
       右クリック: 撤去<br>
       R: 回転（カーソルの下 / 選択中の向き）<br>
       ホイール: 拡大縮小<br>
-      Shift + ドラッグ: 画面を動かす<br>
+      Shift / スペース + ドラッグ、中ボタンドラッグ: 画面を動かす<br>
+      矢印キー / WASD: 画面を動かす（Shift で速く）<br>
+      F / Home: 全体を表示、+ / -: 拡大縮小<br>
+      範囲を選ぶ → Ctrl+C / Ctrl+X / Delete、Ctrl+V で貼る（R で回す、右クリックでやめる）<br>
       Esc: 選択を解除<br>
       何も選ばずにクリック: 中身を見る<br>
       <br>
@@ -68,6 +93,7 @@
       スプリッターは横から入った物を、半分ずつ正面と背面（黒い点）へ送ります。<br>
       採掘機は正面（水色の点線）の鉱脈を掘り、背面（黄色の点線）へ出します。<br>
       炉は左下が入力、右下が出力、下の帯が進み具合です。<br>
+      送り出し加工機は、できた製品を正面（黄色の点線）へ自分で出します。<br>
       発電機の電気は電線と機械をたどって24マス先まで届きます（薄い黄色）。<br>
       電線は発電機から遠いほど暗く、届いていないと灰色です。<br>
       電線は機械の下にも置けます。右クリックは機械を先に消します。<br>

@@ -1,0 +1,17 @@
+{
+  "id": "processor",
+  "name": "送り出し加工機(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#b07d4f",
+  "directional": true,
+  "tags": [
+    "production"
+  ],
+  "note": "炉と同じレシピで加工し、できた製品を向いている方向（正面）へ自分で送り出す。正面がベルトなら上へ、それ以外は床へ。材料はアームで入れる",
+  "machine": {
+    "outputFront": true
+  }
+}

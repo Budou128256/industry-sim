@@ -9,11 +9,18 @@
  *   - 出力が違う種類で埋まっている、または上限を超えるなら止まる
  *   - data の power.needs があれば、電気が届いていないと止まる
  *
+ * data の machine.outputFront が真の機械（送り出し加工機。ユーザーの依頼 2026-10-06）:
+ *   - できた製品を、向いている方向（正面）のマスへ自分で送り出す。アームが要らない
+ *   - 正面がベルト・スプリッターならその上へ、それ以外はそのマスの床へ（採掘機と同じ）
+ *   - 正面が盤面の外なら送れずに出力に溜まり、満杯になれば止まる
+ *   - 材料の入れ方は炉と同じ（アームで入れる）
+ *
  * 扱えるレシピは、data/recipes の machines にその建物の id が入っているもの。
  * いまは**材料1種類・製品1種類**のレシピだけを扱う（入力が1スタックのため）。
  */
 
-import { stackLimit } from './inventory.js';
+import { DELTA, inBounds } from './grid.js';
+import { pileMerge, pilePush, stackLimit } from './inventory.js';
 
 export const STATE = { WORKING: '稼働中', WAITING: '原料待ち', FULL: '出力が満杯', NO_POWER: '電力なし' };
 
@@ -64,6 +71,37 @@ export function machineTake(m, max) {
 /** その機械の1回の加工にかかる tick。 */
 export function craftTicks(recipe, tickHz) {
   return Math.max(1, Math.round((recipe.craftTime || 1) * tickHz));
+}
+
+/** 送り出し加工機が製品を出すマス（正面）。 */
+export function machineOutputCell(b) {
+  const d = DELTA[b.dir || 'N'];
+  return { x: b.x + d.x, y: b.y + d.y };
+}
+
+/** 出力を正面のマスへ送り出す（outputFront の機械だけ）。 */
+function pushOutput(sim, b, m) {
+  if (!m.output) return;
+  const { world } = sim;
+  const out = machineOutputCell(b);
+  if (!inBounds(out.x, out.y, world.width, world.height)) return;   // 送れない。出力に溜まる
+  const { item, count } = m.output;
+  const limit = sim.limit(item);
+  const target = world.at(out.x, out.y);
+  if (target && sim.belts.has(target.id)) pilePush(sim.belts.get(target.id), item, count, limit);
+  else pileMerge(sim.groundAt(out.x, out.y, true), item, count, limit);
+  m.output = null;
+}
+
+/**
+ * 送り出し加工機の出力を正面へ送り出す。ベルトの後に呼ぶ（送り出したばかりの物が同じ tick に1マス進まないように。採掘機と同じ）。
+ */
+export function stepMachineOutputs(sim) {
+  for (const [id, m] of sim.machines) {
+    if (!m.output) continue;
+    const b = sim.world.buildings.get(id);
+    if (b && (machineDef(sim.registry, b) || {}).outputFront) pushOutput(sim, b, m);
+  }
 }
 
 /** 全部の加工機を1 tick 進める。 */
