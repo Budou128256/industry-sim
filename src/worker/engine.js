@@ -14,6 +14,7 @@ import { PathPlacer, canPlace, place, removeAt, rotateAt } from '../core/placeme
 import { makeSnapshot } from '../core/snapshot.js';
 import { loadSave, makeSave } from '../core/save.js';
 import { key } from '../core/grid.js';
+import { captureBlueprint, checkBlueprint, pasteBlueprint } from '../core/blueprint.js';
 
 /** 画面の範囲の外にも少し余分に入れる（電線のつながりや、端の建物を描くため）。 */
 const MARGIN = 2;
@@ -187,6 +188,30 @@ export class Engine {
       ground: c.ground,
       resource: c.resource || null,
     };
+  }
+
+  /* ---------- 範囲選択・設計図 ---------- */
+
+  /** 範囲 rect（両端を含む）を設計図にする。盤面は変えない。 */
+  op_copy({ rect, name = '' }) {
+    return captureBlueprint(this.world, rect, name);
+  }
+
+  /** 設計図を左上 (x, y) に貼る。置けない建物は飛ばす。 */
+  op_paste({ blueprint, x, y }) {
+    const reason = checkBlueprint(blueprint);
+    if (reason) throw new Error(reason);
+    const r = pasteBlueprint(this.world, this.registry, blueprint, x, y);
+    if (r.placed) this.changed();
+    return r;
+  }
+
+  /** 範囲に1マスでもかかっている建物を撤去する（中身は床に落ちる）。 */
+  op_removeArea({ rect }) {
+    const list = this.world.buildingsIn(rect.x0, rect.y0, rect.x1, rect.y1);
+    for (const b of list) this.world.remove(b);
+    if (list.length) this.changed();
+    return { removed: list.length };
   }
 
   /** セーブデータを作る（Phase 6）。 */

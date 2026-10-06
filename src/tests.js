@@ -15,6 +15,7 @@ import { makeSnapshot } from './core/snapshot.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { wireColors } from './render/renderer.js';
 import { splitStack, splitterAccepts } from './core/splitter.js';
+import { captureBlueprint, checkBlueprint, pasteBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
 import { Engine } from './worker/engine.js';
 import { loadSave, makeSave } from './core/save.js';
 
@@ -797,6 +798,63 @@ test('電線の色: 届いていないと灰色、強いほど明るい', () => 
     ok(l > last, `強さ ${lv} が ${lv - 1} より明るくない`);
     last = l;
   }
+});
+
+/* ---- 範囲選択・設計図 ---- */
+test('設計図: 範囲に全部入っている建物だけを、左上からの位置で写す（中身は写さない）', () => {
+  const w = simWorld(20, 10);
+  put(w, 'belt', 3, 2, 'E'); put(w, 'chest', 5, 4); put(w, 'wire', 3, 2); put(w, 'smelter', 6, 3);   // 2x2 は (6..7, 3..4)
+  put(w, 'belt', 12, 2, 'E');                         // 範囲の外
+  const rect = rectFrom({ x: 6, y: 4 }, { x: 3, y: 2 });
+  eq(rect, { x0: 3, y0: 2, x1: 6, y1: 4 });
+  const bp = captureBlueprint(w, rect, 'テスト');
+  eq([bp.width, bp.height, bp.name], [4, 3, 'テスト']);
+  eq(bp.buildings, [{ type: 'belt', x: 0, y: 0, dir: 'E' }, { type: 'wire', x: 0, y: 0, dir: 'N' },
+                    { type: 'chest', x: 2, y: 2, dir: 'N' }], '端で切れた 2x2 か範囲の外が入った');
+  eq(checkBlueprint(bp), null);
+  eq(checkBlueprint({ format: 'industry-sim' }), 'このアプリの設計図ではありません');
+});
+test('設計図: 貼ると同じ並びになり、重なる・盤面の外の建物は飛ばす', () => {
+  const w = simWorld(20, 10);
+  put(w, 'belt', 1, 1, 'E'); put(w, 'belt', 2, 1, 'E'); put(w, 'inserter', 2, 2, 'S');
+  const bp = captureBlueprint(w, { x0: 1, y0: 1, x1: 2, y1: 2 });
+  eq(pasteBlueprint(w, simReg, bp, 10, 5), { placed: 3, skipped: 0 });
+  eq([w.at(10, 5).dir, w.at(11, 5).type, w.at(11, 6).type], ['E', 'belt', 'inserter']);
+  const pv = previewBlueprint(w, simReg, bp, 10, 5);
+  ok(pv.every(p => !p.ok), '重なるのに置けると出た');
+  eq(pasteBlueprint(w, simReg, bp, 19, 5), { placed: 1, skipped: 2 }, '盤面の外を飛ばしていない');
+});
+test('設計図: 回すと時計回りに90度回り、4回で元に戻る（2x2 も）', () => {
+  const w = simWorld(20, 10);
+  put(w, 'belt', 0, 0, 'E'); put(w, 'smelter', 1, 0); put(w, 'inserter', 3, 1, 'N');   // 4x2 の範囲
+  const bp = captureBlueprint(w, { x0: 0, y0: 0, x1: 3, y1: 1 });
+  const r1 = rotateBlueprint(bp, simReg);
+  eq([r1.width, r1.height], [2, 4]);
+  // (0,0) の E 向きベルトは、回すと右上 (1,0) で S 向き。(3,1) の N 向きアームは (0,3) で E 向き
+  ok(r1.buildings.some(b => b.type === 'belt' && b.x === 1 && b.y === 0 && b.dir === 'S'), JSON.stringify(r1.buildings));
+  ok(r1.buildings.some(b => b.type === 'inserter' && b.x === 0 && b.y === 3 && b.dir === 'E'), JSON.stringify(r1.buildings));
+  ok(r1.buildings.some(b => b.type === 'smelter' && b.x === 0 && b.y === 1), '2x2 の位置が違う');
+  const w2 = simWorld(20, 10);
+  eq(pasteBlueprint(w2, simReg, r1, 0, 0).skipped, 0, '回した設計図が重なった');
+  let r = bp;
+  for (let i = 0; i < 4; i++) r = rotateBlueprint(r, simReg);
+  eq(r.buildings.map(b => ({ ...b, dir: b.type === 'smelter' ? 'N' : b.dir })), bp.buildings);
+});
+test('エンジン: 範囲をコピーして貼り、範囲を削除する', () => {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  const res = id => sent.find(m => m.re === id);
+  eng.handle({ id: 1, op: 'place', type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 2, y: 1, dir: 'E' }] });
+  eng.handle({ id: 2, op: 'copy', rect: { x0: 0, y0: 0, x1: 3, y1: 2 } });
+  const bp = res(2).result;
+  eq(bp.buildings.length, 2);
+  eng.handle({ id: 3, op: 'paste', blueprint: bp, x: 10, y: 5 });
+  eq(res(3).result, { placed: 2, skipped: 0 });
+  eq(eng.world.count, 4);
+  eng.handle({ id: 4, op: 'paste', blueprint: { format: 'x' }, x: 0, y: 0 });
+  ok(res(4).error, '設計図でないのにエラーにならない');
+  eng.handle({ id: 5, op: 'removeArea', rect: { x0: 9, y0: 4, x1: 12, y1: 6 } });
+  eq([res(5).result.removed, eng.world.count], [2, 2]);
 });
 
 /* ---- 送り出し加工機 ---- */

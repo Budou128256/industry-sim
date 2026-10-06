@@ -16,7 +16,8 @@ import { Renderer } from './render/renderer.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
 import { SimClient } from './client.js';
-import { loadLocal, saveLocal } from './storage.js';
+import { listLocal, loadLocal, removeLocal, saveLocal } from './storage.js';
+import { BLUEPRINT_FORMAT, checkBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
 
 const BOARD = { width: 64, height: 64 };
 /** ブラウザの中に自動保存する名前と間隔。 */
@@ -38,6 +39,10 @@ const state = {
   version: 0,         // 届いた写しの version（盤面が変わるたびに増える）
   savedVersion: -1,   // 最後に自動保存したときの version
   dir: 'N',           // これから置く向き
+  selStart: null,     // 範囲選択を始めたマス
+  selection: null,    // 選んでいる範囲 { x0, y0, x1, y1 }
+  clipboard: null,    // コピーした設計図
+  paste: null,        // 貼り付け中の設計図（マウスに付いてくる）
 };
 
 const $ = id => document.getElementById(id);
@@ -47,6 +52,10 @@ const ITEM_TOOL = '__items';
 /** 鉱脈を置く道具（右クリックで消す）。 */
 const RESOURCE_TOOL = '__resource';
 const ITEM_AMOUNT = 10;
+/** 範囲を選ぶ道具。 */
+const SELECT_TOOL = '__select';
+/** 設計図をブラウザの中に保存するときの名前の頭。 */
+const BP_PREFIX = 'blueprint:';
 
 async function main() {
   state.registry = await Registry.load('data');
@@ -78,6 +87,18 @@ async function main() {
     state.dir = rotateCW(state.dir);
     status(`これから置く向き: ${state.dir}`);
   };
+
+  $('toolSelect').onclick = () => selectBuilding(SELECT_TOOL);
+  $('btnCopy').onclick = () => onCommand({ type: 'copy' });
+  $('btnCut').onclick = () => onCommand({ type: 'cut' });
+  $('btnDelete').onclick = () => onCommand({ type: 'delete' });
+  $('btnPaste').onclick = () => onCommand({ type: 'paste' });
+  $('btnSaveBp').onclick = saveBlueprint;
+  $('btnFit').onclick = () => onCommand({ type: 'fit' });
+  $('btnZoomIn').onclick = () => { state.renderer.zoomCenter(1.25); onCommand({ type: 'redraw' }); };
+  $('btnZoomOut').onclick = () => { state.renderer.zoomCenter(1 / 1.25); onCommand({ type: 'redraw' }); };
+  updateSelButtons();
+  refreshBlueprints();
 
   $('btnExport').onclick = exportFile;
   $('btnImport').onclick = () => $('fileImport').click();
@@ -165,6 +186,7 @@ async function importFile(file) {
     status(`${file.name} は JSON として読めません`, true);
     return;
   }
+  if (data && data.format === BLUEPRINT_FORMAT) { await importBlueprint(data, file.name); return; }
   try {
     stop();
     const r = await state.client.call('load', { data });
@@ -244,9 +266,16 @@ function stop() {
 }
 
 function selectBuilding(id) {
+  exitPaste(true);
   state.selected = id;
   for (const el of document.querySelectorAll('.pal')) {
     el.classList.toggle('sel', el.dataset.id === id);
+  }
+  if (!id) { state.renderer.ghost = null; return; }
+  if (id === SELECT_TOOL) {
+    state.renderer.ghost = null;
+    status('ドラッグで範囲を選びます。選んだら Ctrl+C でコピー、Ctrl+X で切り取り、Delete で削除、「設計図として保存」で保存');
+    return;
   }
   if (id === RESOURCE_TOOL) {
     state.renderer.ghost = null;
@@ -268,7 +297,35 @@ function onCommand(cmd) {
   const world = state.view.world;
   const tool = state.selected === ITEM_TOOL || state.selected === RESOURCE_TOOL;
   const paint = state.selected === RESOURCE_TOOL;
-  const def = state.selected && !tool ? registry.building(state.selected) : null;
+  const select = state.selected === SELECT_TOOL;
+  const def = state.selected && !tool && !select ? registry.building(state.selected) : null;
+
+  // 設計図を貼っているとき（マウスに付いてくる）
+  if (state.paste && pasteCommand(cmd)) return;
+  // 範囲選択・コピー・貼り付け・画面
+  switch (cmd.type) {
+    case 'copy': copySelection(false); return;
+    case 'cut': copySelection(true); return;
+    case 'delete': deleteSelection(); return;
+    case 'paste':
+      if (state.clipboard) enterPaste(state.clipboard);
+      else status('コピーした範囲がありません（範囲を選んで Ctrl+C）', true);
+      return;
+    case 'fit':
+      renderer.fitTo(world.width, world.height);
+      sendView(); draw();
+      return;
+    case 'release':
+      if (select && state.selection) selectionStatus();
+      return;
+  }
+  if (select && (cmd.type === 'place' || cmd.type === 'drag')) {
+    const to = cmd.type === 'place' ? cmd : cmd.to;
+    if (cmd.type === 'place') state.selStart = { x: cmd.x, y: cmd.y };
+    if (!state.selStart) return;
+    setSelection(rectFrom(state.selStart, to));
+    return;
+  }
 
   switch (cmd.type) {
     case 'hover': {
@@ -311,6 +368,7 @@ function onCommand(cmd) {
       break;
     }
     case 'cancel':
+      setSelection(null);
       state.selected = null;
       renderer.ghost = null;
       for (const el of document.querySelectorAll('.pal')) el.classList.remove('sel');
@@ -322,6 +380,177 @@ function onCommand(cmd) {
       draw();
       break;
   }
+}
+
+/* ---------- 範囲選択・コピー・貼り付け・設計図 ---------- */
+
+function setSelection(rect) {
+  state.selection = rect;
+  state.renderer.selection = rect;
+  updateSelButtons();
+  draw();
+}
+
+function updateSelButtons() {
+  for (const id of ['btnCopy', 'btnCut', 'btnDelete', 'btnSaveBp']) $(id).disabled = !state.selection;
+  $('btnPaste').disabled = !state.clipboard;
+}
+
+function selectionStatus() {
+  const s = state.selection;
+  status(`範囲 (${s.x0}, ${s.y0})〜(${s.x1}, ${s.y1})（${s.x1 - s.x0 + 1}x${s.y1 - s.y0 + 1}）を選びました — Ctrl+C コピー / Ctrl+X 切り取り / Delete 削除 / 設計図として保存`);
+}
+
+async function copySelection(cut) {
+  if (!state.selection) { status('先に「範囲を選ぶ」で範囲を選んでください', true); return; }
+  const bp = await state.client.call('copy', { rect: state.selection });
+  if (!bp.buildings.length) { status('範囲の中に（全部が入っている）建物がありません', true); return; }
+  state.clipboard = bp;
+  if (cut) await state.client.call('removeArea', { rect: state.selection });
+  updateSelButtons();
+  status(`建物 ${bp.buildings.length} 個を${cut ? '切り取り' : 'コピー'}しました（${bp.width}x${bp.height}）。Ctrl+V で貼ります`);
+  if (cut) setSelection(null);
+}
+
+async function deleteSelection() {
+  if (!state.selection) return;
+  if (!state.view.world.buildingsIn(state.selection.x0, state.selection.y0, state.selection.x1, state.selection.y1).length) {
+    status('範囲の中に建物がありません'); return;
+  }
+  const { removed } = await state.client.call('removeArea', { rect: state.selection });
+  status(`建物 ${removed} 個を削除しました（中身は床に落ちます）`);
+}
+
+/** 設計図をマウスに付けて、クリックで貼れるようにする。 */
+function enterPaste(bp) {
+  state.paste = { bp };
+  state.renderer.ghost = null;
+  setSelection(null);
+  status(`「${bp.name || 'コピー'}」（${bp.width}x${bp.height}・建物 ${bp.buildings.length}）をクリックで貼ります。R で回す、右クリック・Esc でやめる`);
+  if (state.renderer.hover) pastePreview(state.renderer.hover);
+}
+
+function exitPaste(quiet = false) {
+  if (!state.paste) return;
+  state.paste = null;
+  state.renderer.pasteGhost = null;
+  if (!quiet) status('貼り付けをやめました');
+  draw();
+}
+
+/** マウスのマスが設計図の真ん中あたりになるように、左上を決める。 */
+function pasteOrigin(cell) {
+  const { bp } = state.paste;
+  return { x: cell.x - Math.floor((bp.width - 1) / 2), y: cell.y - Math.floor((bp.height - 1) / 2) };
+}
+
+function pastePreview(cell) {
+  const o = pasteOrigin(cell);
+  state.renderer.pasteGhost = previewBlueprint(state.view.world, state.registry, state.paste.bp, o.x, o.y);
+  draw();
+}
+
+/** 貼り付け中のコマンド。処理したら true。 */
+function pasteCommand(cmd) {
+  switch (cmd.type) {
+    case 'hover': pastePreview(cmd); return true;
+    case 'place': {
+      const o = pasteOrigin(cmd), bp = state.paste.bp;
+      state.client.call('paste', { blueprint: bp, x: o.x, y: o.y }).then(r => {
+        status(`建物 ${r.placed} 個を貼りました` + (r.skipped ? `（重なる・盤面の外の ${r.skipped} 個は飛ばしました）` : '')
+          + '。続けてクリックで貼れます', !!r.skipped);
+        if (state.paste && state.renderer.hover) pastePreview(state.renderer.hover);
+      });
+      return true;
+    }
+    case 'drag': case 'release': return true;
+    case 'rotate':
+      state.paste.bp = rotateBlueprint(state.paste.bp, state.registry);
+      pastePreview(cmd);
+      return true;
+    case 'remove': case 'cancel': exitPaste(); return true;
+    default: return false;
+  }
+}
+
+/** 選んだ範囲を、名前を付けてブラウザの中に保存する。 */
+async function saveBlueprint() {
+  if (!state.selection) { status('先に「範囲を選ぶ」で範囲を選んでください', true); return; }
+  const bp = await state.client.call('copy', { rect: state.selection });
+  if (!bp.buildings.length) { status('範囲の中に（全部が入っている）建物がありません', true); return; }
+  const name = (prompt('設計図の名前', '') || '').trim();
+  if (!name) return;
+  bp.name = name;
+  try {
+    if (await loadLocal(BP_PREFIX + name) && !confirm(`「${name}」はもうあります。上書きしますか？`)) return;
+    await saveLocal(BP_PREFIX + name, bp);
+    status(`設計図「${name}」を保存しました（建物 ${bp.buildings.length}・${bp.width}x${bp.height}）`);
+    refreshBlueprints();
+  } catch (e) {
+    status(`設計図を保存できません: ${e.message}`, true);
+  }
+}
+
+async function importBlueprint(bp, fileName) {
+  const reason = checkBlueprint(bp);
+  if (reason) { status(`${fileName} を読み込めません: ${reason}`, true); return; }
+  const name = (bp.name || fileName.replace(/\.json$/i, '')).trim() || '設計図';
+  try {
+    await saveLocal(BP_PREFIX + name, { ...bp, name });
+    status(`設計図「${name}」を一覧に加えました（建物 ${bp.buildings.length}）`);
+    refreshBlueprints();
+  } catch (e) {
+    status(`設計図を保存できません: ${e.message}`, true);
+  }
+}
+
+/** 保存した設計図の一覧を作り直す。 */
+async function refreshBlueprints() {
+  const box = $('bpList');
+  let names = [];
+  try { names = await listLocal(BP_PREFIX); } catch { box.textContent = ''; return; }
+  box.innerHTML = '';
+  for (const key of names) {
+    const name = key.slice(BP_PREFIX.length);
+    const row = document.createElement('div');
+    row.className = 'bp';
+    const use = document.createElement('button');
+    use.className = 'pal';
+    use.title = 'クリックで貼り付け';
+    use.innerHTML = `<i style="background:#38bdf8"></i><span class="n"></span><span class="sz"></span>`;
+    use.querySelector('.n').textContent = name;
+    const bp = await loadLocal(key);
+    if (!bp) continue;
+    use.querySelector('.sz').textContent = `${bp.width}x${bp.height}`;
+    use.onclick = () => { selectBuilding(null); enterPaste(bp); };
+    const out = document.createElement('button');
+    out.className = 'mini'; out.textContent = '⤓'; out.title = 'ファイルに書き出す';
+    // ファイル名は英数字だけにする（日本語の名前だとブラウザによって "download" になることがあった）。名前はファイルの中に入っている
+    out.onclick = () => {
+      const d = new Date(), pad = n => String(n).padStart(2, '0');
+      downloadJSON(bp, `blueprint-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`);
+      status(`設計図「${name}」を書き出しました。「読み込み」で一覧に戻せます`);
+    };
+    const del = document.createElement('button');
+    del.className = 'mini'; del.textContent = '×'; del.title = '削除';
+    del.onclick = async () => {
+      if (!confirm(`設計図「${name}」を削除しますか？`)) return;
+      await removeLocal(key);
+      refreshBlueprints();
+      status(`設計図「${name}」を削除しました`);
+    };
+    row.append(use, out, del);
+    box.appendChild(row);
+  }
+}
+
+function downloadJSON(data, fileName) {
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.download = fileName;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 /** 置いた結果を出す（判定と設置は Worker が行う）。tried: 置こうとしたマスの数 */

@@ -8,8 +8,23 @@
  *   { type:'remove', x, y }           撤去
  *   { type:'rotate', x, y }           回す
  *   { type:'drag',   from, to }       連続設置（前のマス → 今のマス。マウスの通った道どおりに置く）
- *   { type:'inspect', x, y }          中身を見る
+ *   { type:'release' }                左ボタンを離した（範囲選択の確定）
+ *   { type:'copy' | 'cut' | 'paste' | 'delete' }   Ctrl+C / Ctrl+X / Ctrl+V / Delete
+ *   { type:'fit' }                    盤面全体を表示（F / Home）
+ *   { type:'redraw' }                 画面を動かした（描き直す）
+ *
+ * 画面の移動（ここで直接カメラを動かす。World は触らない）:
+ *   矢印キー / WASD（Shift で速く）、スペースを押しながら左ドラッグ、中ボタンドラッグ、Shift+ドラッグ、
+ *   ホイールで拡大縮小、+ / - でも拡大縮小
  */
+
+/** 押している間に動く速さ（マス/秒）。Shift で FAST 倍。 */
+const PAN_SPEED = 16;
+const FAST = 3;
+const PAN_KEYS = {
+  ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+  w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+};
 
 export class Input {
   constructor(canvas, renderer, emit) {
@@ -18,6 +33,10 @@ export class Input {
     this.emit = emit;
     this.dragStart = null;
     this.panning = null;
+    this.space = false;          // スペースを押している（左ドラッグで画面を動かす）
+    this.held = new Set();       // 押している移動キー
+    this.shift = false;
+    this.lastFrame = 0;
     this.bind();
   }
 
@@ -28,7 +47,8 @@ export class Input {
 
     cv.addEventListener('mousedown', e => {
       const cell = r.toCell(e.clientX, e.clientY);
-      if (e.button === 1 || e.shiftKey) {              // 中ボタン / Shift で画面を動かす
+      if (e.button === 1 || e.shiftKey || (e.button === 0 && this.space)) {   // 中ボタン / Shift / スペースで画面を動かす
+        e.preventDefault();
         this.panning = { px: e.clientX, py: e.clientY };
         return;
       }
@@ -57,7 +77,10 @@ export class Input {
       }
     });
 
-    window.addEventListener('mouseup', () => { this.dragStart = null; this.panning = null; });
+    window.addEventListener('mouseup', () => {
+      if (this.dragStart) this.emit({ type: 'release' });
+      this.dragStart = null; this.panning = null;
+    });
 
     cv.addEventListener('wheel', e => {
       e.preventDefault();
@@ -65,13 +88,52 @@ export class Input {
       this.emit({ type: 'redraw' });
     }, { passive: false });
 
+    const typing = e => ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
     window.addEventListener('keydown', e => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (e.key === 'r' || e.key === 'R') {
+      if (typing(e)) return;
+      this.shift = e.shiftKey;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (e.ctrlKey || e.metaKey) {
+        const cmd = { c: 'copy', x: 'cut', v: 'paste' }[k];
+        if (cmd) { e.preventDefault(); this.emit({ type: cmd }); }
+        return;
+      }
+      if (PAN_KEYS[k]) { e.preventDefault(); this.held.add(k); this.startPan(); return; }
+      if (k === ' ') { e.preventDefault(); this.space = true; cv.style.cursor = 'grab'; return; }
+      if (k === 'r') {
         const c = r.hover;
         if (c) this.emit({ type: 'rotate', ...c });
       }
-      if (e.key === 'Escape') this.emit({ type: 'cancel' });
+      if (k === 'f' || k === 'Home') this.emit({ type: 'fit' });
+      if (k === '+' || k === '=' || k === ';') { r.zoomCenter(1.25); this.emit({ type: 'redraw' }); }
+      if (k === '-') { r.zoomCenter(1 / 1.25); this.emit({ type: 'redraw' }); }
+      if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); this.emit({ type: 'delete' }); }
+      if (k === 'Escape') this.emit({ type: 'cancel' });
     });
+    window.addEventListener('keyup', e => {
+      this.shift = e.shiftKey;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      this.held.delete(k);
+      if (k === ' ') { this.space = false; cv.style.cursor = ''; }
+    });
+    window.addEventListener('blur', () => { this.held.clear(); this.space = false; cv.style.cursor = ''; });
+  }
+
+  /** 移動キーを押している間、毎コマ少しずつ画面を動かす。 */
+  startPan() {
+    if (this.lastFrame) return;          // もう動いている
+    const r = this.renderer;
+    this.lastFrame = performance.now();
+    const step = now => {
+      if (!this.held.size) { this.lastFrame = 0; return; }
+      const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
+      this.lastFrame = now;
+      let dx = 0, dy = 0;
+      for (const k of this.held) { dx += PAN_KEYS[k][0]; dy += PAN_KEYS[k][1]; }
+      const v = PAN_SPEED * (this.shift ? FAST : 1) * dt * (28 / r.tile);   // 縮小しているほど速く
+      if (dx || dy) { r.pan(dx * v, dy * v); this.emit({ type: 'redraw' }); }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 }

@@ -20,6 +20,8 @@ export class Renderer {
     this.hover = null;              // { x, y }
     this.ghost = null;              // { cells, ok, def, dir }
     this.showPower = true;          // 電気の届く範囲を塗るか
+    this.selection = null;          // 選んでいる範囲 { x0, y0, x1, y1 }（両端を含む）
+    this.pasteGhost = null;         // 貼ろうとしている設計図の下見 [{ def, x, y, dir, ok }]
     /** 一番強い電源の強さ（電線の明るさ・塗りの濃さの基準）。data の power.source から */
     this.maxPower = 1;
     for (const b of registry.buildings.values()) {
@@ -52,6 +54,20 @@ export class Renderer {
   pan(dxCells, dyCells) {
     this.origin.x += dxCells;
     this.origin.y += dyCells;
+  }
+
+  /** 画面の真ん中を中心に拡大縮小する。 */
+  zoomCenter(factor) {
+    const r = this.canvas.getBoundingClientRect();
+    this.zoomAt(r.left + r.width / 2, r.top + r.height / 2, factor);
+  }
+
+  /** 盤面全体（幅 x 高さ マス）が画面に収まるようにする。 */
+  fitTo(width, height) {
+    const { width: vw, height: vh } = this.viewport;
+    this.tile = Math.max(8, Math.min(64, Math.min(vw / width, vh / height)));
+    this.origin.x = (width - vw / this.tile) / 2;
+    this.origin.y = (height - vh / this.tile) / 2;
   }
 
   resize() {
@@ -136,6 +152,8 @@ export class Renderer {
     if (sim) this.drawItems(sim, shown, { x0, y0, x1, y1 });
 
     if (this.ghost) this.drawGhost(this.ghost);
+    if (this.pasteGhost) this.drawPasteGhost(this.pasteGhost);
+    if (this.selection) this.drawSelection(this.selection);
     if (this.hover) this.drawHover(this.hover);
   }
 
@@ -325,6 +343,37 @@ export class Renderer {
       ctx.fillRect(px, py, t, t);
       ctx.strokeRect(px + 1, py + 1, t - 2, t - 2);
     }
+  }
+
+  /** 設計図の下見。建物ごとに置ける（緑）・置けない（赤）。向きの印も描く。 */
+  drawPasteGhost(list) {
+    const ctx = this.ctx, t = this.tile;
+    for (const g of list) {
+      const cells = g.def ? footprint(g.x, g.y, g.def.size, g.dir) : [{ x: g.x, y: g.y }];
+      this.drawGhost({ cells, ok: g.ok });
+      if (g.def && g.def.directional) {
+        const d = DELTA[g.dir], { px, py } = this.toScreen(g.x, g.y);
+        const { width: w, height: h } = rotatedSize(g.def.size, g.dir);
+        ctx.fillStyle = 'rgba(11,14,21,0.8)';
+        ctx.beginPath();
+        ctx.arc(px + w * t / 2 + d.x * w * t * 0.33, py + h * t / 2 + d.y * h * t * 0.33, Math.max(2, t * 0.09), 0, 7);
+        ctx.fill();
+      }
+    }
+  }
+
+  /** 選んでいる範囲（水色の点線）。 */
+  drawSelection(s) {
+    const ctx = this.ctx, t = this.tile;
+    const { px, py } = this.toScreen(s.x0, s.y0);
+    const w = (s.x1 - s.x0 + 1) * t, h = (s.y1 - s.y0 + 1) * t;
+    ctx.fillStyle = 'rgba(56,189,248,0.08)';
+    ctx.fillRect(px, py, w, h);
+    ctx.strokeStyle = 'rgba(56,189,248,0.95)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(px + 1, py + 1, w - 2, h - 2);
+    ctx.setLineDash([]);
   }
 
   drawHover({ x, y }) {
