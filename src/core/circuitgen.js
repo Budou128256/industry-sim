@@ -391,7 +391,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
     for (let i = 0; i < n; i++) {
       const y = inTop + (perm ? perm.indexOf(i) : i) * pattern.inGap;     // perm: 上から並べるレバーの順
       L.set(1, y, { t: 'lever', n: `in${i}` }); L.parts.push({ type: 'lever', x: 1, y, dir: 'N', input: i });
-      // leverGen: レバーの電気は弱い（強さ5）ので、線が長いと届かない。そのときは隣に発電機を置き、
+      // leverGen: レバーの電気は発電機の半分（強さ12）なので、線が長いと届かない。そのときは隣に発電機を置き、
       // 入っているあいだ発電機の電気を通す（切れていれば通さない）
       if (leverGen) { L.set(0, y, { t: 'gen' }); L.parts.push({ type: 'generator', x: 0, y, dir: 'N' }); }
       for (const [x, yy] of [[0, y], [0, y - 1], [0, y + 1], [1, y - 1], [1, y + 1]]) L.reserve(x, yy);
@@ -572,7 +572,7 @@ export function generateCircuits(registry, n, table) {
   const perms = permutations([...Array(n).keys()]);
   const tries = [];
   for (const direct of [true, false]) for (const boost of [false, true]) for (const p of PATTERNS) for (const perm of perms) tries.push({ pattern: p, boost, perm, direct });
-  // レバーは電源（強さ5）。まず発電機なしで試し、レバーの電気が届かず候補が少ないときだけ、
+  // レバーは電源（強さ12）。まず発電機なしで試し、レバーの電気が届かず1つも作れないときだけ、
   // 左端のレバーの隣に発電機を置いて強める形も試す
   const attempt = (leverGen) => (t, order) => {
     const { pattern, boost, perm, direct } = t;
@@ -604,7 +604,7 @@ export function generateCircuits(registry, n, table) {
     });
   };
   tries.forEach(attempt(false));
-  if (candidates.length < 5) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
+  if (!candidates.length) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
   candidates.sort((a, b) => (a.area - b.area) || (a.count - b.count) || (a.order - b.order));
   return { terms, text, how, candidates };
 }

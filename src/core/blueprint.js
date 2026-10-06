@@ -4,7 +4,7 @@
  *   { format: 'industry-sim-blueprint', version: 1, name, width, height,
  *     buildings: [{ type, x, y, dir }] }      x, y は範囲の左上からの位置
  *
- * 写すのは建物（床の層の電線も）と向きだけ。中身（ベルトの上の物など）と鉱脈は写さない。
+ * 写すのは建物（床の層の電線も）と向き、アームのフィルタ（filter）だけ。中身（ベルトの上の物など）と鉱脈は写さない。
  * ただし機械の自動配置（linegen.js）が作る設計図は、ドリルが掘る鉱脈を resources: [{ x, y, item }] に持つ
  * （無くてもよい。貼ると鉱脈も置く。回す・反転にも付いてくる）。
  * 範囲に全部が入っている建物だけを写す（2x2 の建物が範囲の端で切れているときは写さない）。
@@ -32,7 +32,7 @@ export function buildingsInside(world, rect) {
 /** 範囲を設計図にする。 */
 export function captureBlueprint(world, rect, name = '') {
   const buildings = buildingsInside(world, rect)
-    .map(b => ({ type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir }))
+    .map(b => ({ type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir, ...(b.filter ? { filter: b.filter } : {}) }))
     .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.type < b.type ? -1 : 1));
   return {
     format: BLUEPRINT_FORMAT, version: BLUEPRINT_VERSION, name,
@@ -142,7 +142,7 @@ export function pasteBlueprint(world, registry, bp, x, y, { overwrite = false } 
     if (j.state === 'same') { same++; continue; }
     if (j.state === 'blocked') { skipped++; continue; }
     for (const h of j.hit) if (world.remove(h)) replaced++;
-    if (place(world, def, at.x, at.y, at.dir)) placed++;
+    if (place(world, def, at.x, at.y, at.dir, { filter: b.filter })) placed++;
     else skipped++;
   }
   let ores = 0;
@@ -166,7 +166,7 @@ export function moveArea(world, registry, rect, transforms, x, y, { overwrite = 
   if (!originals.length) return empty;
   const src = {
     width: rect.x1 - rect.x0 + 1, height: rect.y1 - rect.y0 + 1,
-    buildings: originals.map(b => ({ id: b.id, type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir })),
+    buildings: originals.map(b => ({ id: b.id, type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir, filter: b.filter })),
   };
   const bp = transformBlueprint(src, registry, transforms);
   const ignore = new Set(originals.map(b => b.id));
@@ -180,7 +180,7 @@ export function moveArea(world, registry, rect, transforms, x, y, { overwrite = 
   const moves = [];
   bp.buildings.forEach((b, i) => {
     const p = plan[i];
-    const nb = place(world, p.def, p.x, p.y, p.dir);
+    const nb = place(world, p.def, p.x, p.y, p.dir, { filter: b.filter });
     if (nb) moves.push([b.id, nb.id]);
   });
   return { moved: moves.length, replaced, blocked: 0, moves, width: bp.width, height: bp.height };

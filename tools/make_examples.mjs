@@ -77,7 +77,7 @@ const EXAMPLES = [
     build(reg) {
       const b = board(reg, 32, 10);
       b.put('generator', 1, 3).row('wire', 2, 29, 3);
-      b.ore('iron-ore', [5, 4], [16, 4], [27, 4]);
+      b.ore('iron-ore', [4, 4], [5, 4], [4, 5], [5, 5], [15, 4], [16, 4], [15, 5], [16, 5], [26, 4], [27, 4], [26, 5], [27, 5]);   // 鉱脈は 2x2
       b.put('miner', 6, 4, 'W').col('belt', 7, 4, 7, 'S');        // ベルトの先 (7,8) で床に落ちる
       b.put('miner', 17, 4, 'W');                                   // 背面 (18,4) の床へ
       b.put('miner', 28, 4, 'W');                                   // 電気が届かない
@@ -131,7 +131,7 @@ const EXAMPLES = [
       + '採掘機は発電機の隣から電気をもらい、隣どうしで電気を渡す。炉は10秒に1枚なので、鉱石は炉の中（入力）に溜まっていく',
     build(reg) {
       const b = board(reg, 24, 12);
-      b.ore('iron-ore', [3, 7], [4, 7], [5, 7]);
+      b.ore('iron-ore', [2, 7], [3, 7], [2, 8], [3, 8], [4, 7], [5, 7], [4, 8], [5, 8]);   // 鉱脈は 2x2 が2つ
       b.put('generator', 2, 6).row('miner', 3, 5, 6, 'S').row('wire', 6, 11, 6);
       b.row('belt', 3, 7, 5, 'E');                                  // (8,5) の床に落ちる
       b.put('inserter', 9, 5, 'W').put('furnace', 10, 5).put('inserter', 11, 5, 'W');
@@ -159,7 +159,7 @@ const EXAMPLES = [
   {
     id: 'new-machines',
     name: '6. 新しい機械まとめ',
-    note: '上の段（左から）: 製材機（木材→板）、焼却炉（石炭を10秒に1個消す）、粉砕機2台（スクラップ用アイテムA→3種類・B→2種類を下へ送り出す）、'
+    note: '上の段（左から）: 製材機（木材→板）、焼却炉（石炭を10秒に1個消す）、粉砕機2台（スクラップ用アイテムA・Bをそれぞれ2種類の素材にして下へ送り出す）、'
       + '回収機（下向き。点線の5x5の床の物を、1秒ごとに背面の箱へ。点線の外の石炭は残る）、簡易ドリルと採掘機（簡易ドリルは半分の速さ）。'
       + '下の段の回路は、電気が届くとアーム（電気の印）の赤い × が消える。左上の丸が緑なら入っている。'
       + 'レバーは何も選んでいないときにクリックで入り切り。左から: レバー1つ、交差回路（横だけ通り縦には漏れない）、'
@@ -184,18 +184,18 @@ const EXAMPLES = [
       b.put('collector', 22, 2, 'S').put('chest', 22, 1);
       b.items(20, 4, 'iron-ore', 5).items(23, 6, 'coal', 3).items(24, 7, 'copper-ore', 2).items(22, 9, 'coal', 4);   // (22,9) は範囲の外
       // 簡易ドリルと採掘機（左を掘り、右の床へ出す）
-      b.ore('iron-ore', [27, 2], [27, 3]);
+      b.ore('iron-ore', [26, 2], [27, 2], [26, 3], [27, 3]);   // 鉱脈は 2x2
       b.put('crude-drill', 28, 2, 'W').put('miner', 28, 3, 'W');
 
       // 回路（下の段）。アームは電気の印
-      b.put('generator', 1, 11).put('lever', 2, 11).row('wire', 3, 4, 11).put('inserter', 5, 11, 'E');
+      b.put('lever', 2, 11).row('wire', 3, 4, 11).put('inserter', 5, 11, 'E');
       b.put('generator', 1, 14).row('wire', 2, 3, 14).put('cross-circuit', 4, 14).put('wire', 5, 14).put('inserter', 6, 14, 'E');
       b.put('inserter', 4, 13, 'E').col('wire', 4, 15, 16).put('inserter', 4, 17, 'E');
       b.put('logic-circuit', 15, 15, 'N').put('wire', 15, 14).put('inserter', 15, 13, 'E');
-      b.put('generator', 11, 15).put('lever', 12, 15).row('wire', 13, 14, 15).leverOn(12, 15);
-      b.put('generator', 19, 15).put('lever', 18, 15).row('wire', 16, 17, 15).leverOn(18, 15);
-      b.put('generator', 15, 19).put('lever', 15, 18).col('wire', 15, 16, 17);
-      b.put('generator', 22, 12).put('lever', 23, 12).put('wire', 24, 12).put('delay-circuit', 25, 12, 'E').put('wire', 26, 12).put('inserter', 27, 12, 'E');
+      b.put('lever', 12, 15).row('wire', 13, 14, 15).leverOn(12, 15);
+      b.put('lever', 18, 15).row('wire', 16, 17, 15).leverOn(18, 15);
+      b.put('lever', 15, 18).col('wire', 15, 16, 17);
+      b.put('lever', 23, 12).put('wire', 24, 12).put('delay-circuit', 25, 12, 'E').put('wire', 26, 12).put('inserter', 27, 12, 'E');
       b.put('chest', 22, 16).put('inserter', 23, 16, 'W').put('generator', 23, 17)
         .put('pressure-plate', 24, 16).row('wire', 25, 26, 16).put('inserter', 27, 16, 'E');
       b.items(22, 16, 'coal', 50);

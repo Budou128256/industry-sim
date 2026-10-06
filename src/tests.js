@@ -1347,7 +1347,7 @@ test('粉砕機: スクラップ用アイテム1個を10秒で2〜3種類にし�
   for (let i = 0; i < 10; i++) sim.stepSecond();
   const kinds = l => Object.fromEntries(l.map(s => [s.item, s.count]));
   const onBelt = [...sim.contentsAt(2, 1).belt, ...sim.contentsAt(3, 1).ground];
-  eq(kinds(onBelt), { 'iron-plate': 2, 'copper-plate': 1, 'scrap-part': 1 }, 'A は3種類');
+  eq(kinds(onBelt), { 'iron-plate': 2, 'scrap-part': 1 }, 'A は2種類');
   eq(kinds(sim.contentsAt(1, 3).ground), { 'copper-plate': 1, 'scrap-part': 2 }, 'B は2種類');
   eq(sim.contentsAt(1, 1).machine.input, { item: 'scrap-a', count: 1 });
   eq(sim.contentsAt(1, 1).machine.output, null, '出力に溜まった');
@@ -1378,16 +1378,19 @@ test('レバー: 入っているときだけ電気を通す。置いた直後は
   eq(poweredAt(sim, 3, 1), false);
   eq(toggleLever(sim, 2, 1), null, '電線を入り切りできた');
 });
-test('レバー: 入っているあいだは発電機なしでも電源になる（強さ5: 隣が5、5マス先で届かない）', () => {
-  const w = new World({ width: 10, height: 3 });
-  sigBoard(w, [['lever', 0, 1], ['wire', 1, 1], ['wire', 2, 1], ['wire', 3, 1], ['miner', 4, 1, 'W'], ['wire', 5, 1], ['miner', 6, 1, 'W']]);
+test('レバー: 入っているあいだは発電機なしでも電源になる（強さ12: 隣が12、12マス先まで届く）', () => {
+  const w = new World({ width: 16, height: 3 });
+  const list = [['lever', 0, 1]];
+  for (let x = 1; x <= 11; x++) list.push(['wire', x, 1]);
+  list.push(['miner', 12, 1, 'W'], ['wire', 13, 1], ['miner', 14, 1, 'W']);
+  sigBoard(w, list);
   const sim = new Sim(w, reg);
-  eq(poweredAt(sim, 4, 1), false, '切れているのに届いた');
+  eq(poweredAt(sim, 12, 1), false, '切れているのに届いた');
   toggleLever(sim, 0, 1);
   sim.sync();
-  eq(sim.power.get(key(1, 1)), 5);
-  eq(poweredAt(sim, 4, 1), true, '4マス先に届かない');
-  eq(poweredAt(sim, 6, 1), false, '6マス先まで届いた');
+  eq(sim.power.get(key(1, 1)), 12);
+  eq(poweredAt(sim, 12, 1), true, '12マス先に届かない');
+  eq(poweredAt(sim, 14, 1), false, '14マス先まで届いた');
 });
 test('交差回路: 縦と横がつながらず、来た向きのまままっすぐ通す', () => {
   const w = new World({ width: 9, height: 9 });
@@ -1511,25 +1514,42 @@ function runLine(c, input, recipe, warm = 60, measure = 100) {
 test('機械の自動配置: 鉱脈から・箱から、どの候補も貼ると目標どおりに作る。面積の小さい順', () => {
   for (const source of ['ore', 'chest']) {
     const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 4, source, drill: 'miner' });
-    ok(res.candidates.length >= 2, `${source} の候補が少ない`);
+    ok(res.candidates.length >= 1, `${source} の候補が無い`);
     eq(res.target, 24);                                   // 炉4台 × 10秒に1個 = 毎分24個
     for (let i = 1; i < res.candidates.length; i++) {
       const a = res.candidates[i - 1], b = res.candidates[i];
       ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
     }
     for (const c of res.candidates) {
-      if (source === 'ore') ok(c.blueprint.resources && c.blueprint.resources.length === c.drills, '鉱脈が設計図に無い');
+      if (source === 'ore') eq((c.blueprint.resources || []).length, Math.ceil(c.drills / 2) * 4, '鉱脈（2x2 の塊）が設計図に無い');
       const made = runLine(c, 'iron-ore', 'iron-plate');
       ok(made >= 36, `${source} ${c.patternName}: 100秒で ${made} 個`);   // 目標 40 個の 9 割
     }
   }
 });
-test('機械の自動配置: スプリッターで配る型は、機械ごとにドリルを付ける型よりドリルが少ない', () => {
+test('機械の自動配置: スプリッターで配るので、ドリルは必要な数だけ。鉱脈は 2x2 の塊', () => {
   const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 8, source: 'ore', drill: 'miner' });
-  const tree = res.candidates.find(c => c.pattern === 'tree'), own = res.candidates.find(c => c.pattern === 'own');
-  ok(tree && own);
-  eq(own.drills, 8);
-  eq(tree.drills, 2);                                     // 採掘機は2秒に1個、炉8台で毎秒0.8個 → 2台
+  const c = res.candidates[0];
+  eq(c.drills, 2);                                        // 採掘機は2秒に1個、炉8台で毎秒0.8個 → 2台
+  eq(c.blueprint.resources.length, 4);                    // 2x2 の塊が1つ（ドリル2台がその下の辺に並ぶ）
+  const xs = c.blueprint.resources.map(r => r.x), ys = c.blueprint.resources.map(r => r.y);
+  eq(Math.max(...xs) - Math.min(...xs), 1); eq(Math.max(...ys) - Math.min(...ys), 1);
+});
+test('機械の自動配置: 材料の箱と出口の箱は、外接する長方形の同じ辺（左）に並ぶ', () => {
+  for (const count of [1, 3, 4, 6]) {
+    const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count, source: 'chest' }).candidates[0];
+    ok(c, `${count} 台の候補が無い`);
+    for (const p of [...c.inputs, ...c.outputs]) eq(p.x, 0, `${count} 台: 箱が左の辺に無い`);
+  }
+});
+test('機械の自動配置: 台数が2の累乗でなくても、余った出口を作らない（床に材料がこぼれない）', () => {
+  const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 3, source: 'chest' }).candidates[0];
+  const w = new World({ width: c.width + 4, height: c.height + 4 });
+  pasteBlueprint(w, reg, c.blueprint, 2, 2);
+  const sim = new Sim(w, reg);
+  for (const p of c.inputs) sim.addItems(p.x + 2, p.y + 2, 'iron-ore', 30);
+  for (let i = 0; i < 20; i++) sim.stepSecond();
+  eq(sim.totals().onGround, 0, '床に物がこぼれた');
 });
 test('機械の自動配置: 製品が何種類もある粉砕機・電気を使う製材機も組める。材料が鉱脈でない物は掘れない', () => {
   const list = lineRecipes(reg);
@@ -1542,6 +1562,37 @@ test('機械の自動配置: 製品が何種類もある粉砕機・電気を使
     const perCycle = Object.values(reg.recipe(recipe).outputs).reduce((a, v) => a + v, 0);
     ok(runLine(c, input, recipe) >= 3 * perCycle * 10 * 0.9, `${recipe} の出来高が足りない`);
   }
+});
+test('アームのフィルタ: 決めた種類だけ取る。保存・設計図・回転でも残る', () => {
+  const w = new World({ width: 6, height: 3 });
+  sigBoard(w, [['generator', 0, 0], ['wire', 1, 0], ['wire', 2, 0], ['chest', 1, 1], ['chest', 3, 1]]);
+  ok(place(w, reg.building('inserter'), 2, 1, 'W', { filter: 'copper-ore' }));
+  const sim = new Sim(w, reg);
+  sim.addItems(1, 1, 'iron-ore', 5); sim.addItems(1, 1, 'copper-ore', 3);
+  for (let i = 0; i < 3; i++) sim.stepSecond();
+  const right = sim.contentsAt(3, 1).container.slots.filter(Boolean);
+  eq(right, [{ item: 'copper-ore', count: 3 }], '銅鉱石だけ運ぶはず');
+  eq(sim.contentsAt(1, 1).container.slots.filter(Boolean), [{ item: 'iron-ore', count: 5 }]);
+  // 保存して戻す・設計図・回転
+  const w2 = World.fromJSON(JSON.parse(JSON.stringify(w)), reg);
+  eq(w2.at(2, 1).filter, 'copper-ore');
+  const bp = captureBlueprint(w, { x0: 2, y0: 1, x1: 2, y1: 1 });
+  eq(bp.buildings[0].filter, 'copper-ore');
+  const w3 = new World({ width: 3, height: 3 });
+  pasteBlueprint(w3, reg, rotateBlueprint(bp, reg), 1, 1);
+  eq(w3.at(1, 1).filter, 'copper-ore');
+  eq(rotateAt(w, reg, 2, 1).filter, 'copper-ore');
+  // フィルタは アームにだけ付く
+  ok(!place(w3, reg.building('chest'), 0, 0, 'N', { filter: 'coal' }).filter);
+});
+test('大きい保管箱: 1x2 で、回すと横向きになる', () => {
+  const w = new World({ width: 4, height: 4 });
+  const b = place(w, reg.building('large-chest'), 1, 1, 'N');
+  ok(b); eq(w.at(1, 2).id, b.id);
+  const r = rotateAt(w, reg, 1, 1);
+  ok(r); eq(w.at(2, 1).id, r.id); eq(w.at(1, 2), null);
+  const sim = new Sim(w, reg);
+  eq(sim.contentsAt(1, 1).container.slots.length, 36);
 });
 test('設計図の鉱脈: 回す・反転に付いてきて、貼ると鉱脈も置く', () => {
   const bp = { format: 'industry-sim-blueprint', version: 1, name: '', width: 3, height: 2,

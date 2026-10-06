@@ -11,5 +11,6 @@
   "craftTime": 10,
   "machines": [
     "shredder"
-  ]
+  ],
+  "note": "ユーザーの指摘（2026-10-07）: Core Keeper でスクラップすると素材が2種類出る。どの2種類かは仮"
 }

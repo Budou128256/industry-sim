@@ -18,7 +18,7 @@ import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
 import { SimClient } from './client.js';
 import { listLocal, loadLocal, removeLocal, saveLocal } from './storage.js';
-import { askConfirm, askText } from './ui/dialog.js';
+import { askChoice, askConfirm, askText } from './ui/dialog.js';
 import {
   BLUEPRINT_FORMAT, buildingsInside, captureBlueprint, checkBlueprint, flipBlueprint, previewBlueprint, rectFrom, rotateBlueprint,
 } from './core/blueprint.js';
@@ -397,7 +397,7 @@ function showLineList(res, opts) {
       for (const b of box.querySelectorAll('.cand')) b.classList.toggle('on', b === el);
       enterPaste(c.blueprint);
       const where = opts.source === 'ore'
-        ? 'ドリルの上の列に鉱脈も一緒に置きます'
+        ? 'ドリルの上に 2x2 の鉱脈も一緒に置きます'
         : `材料の箱 ${c.inputs.length} 個に ${nameOf(state.registry.recipe(opts.recipe) ? Object.keys(state.registry.recipe(opts.recipe).inputs)[0] : '')} を入れてください`;
       status(`${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・毎分 ${fmt(c.perMin)} 個（測定）。${where}。製品は出口の箱 ${c.outputs.length} 個へ。クリックで貼り付け`);
     };
@@ -642,8 +642,9 @@ function onCommand(cmd) {
     }
     case 'remove': {
       if (paint) {
-        state.client.call('resource', { item: null, cells: [{ x: cmd.x, y: cmd.y }] })
-          .then(() => status(`(${cmd.x}, ${cmd.y}) の鉱脈を消しました`));
+        const cells = veinCells([{ x: cmd.x, y: cmd.y }]);
+        state.client.call('resource', { item: null, cells })
+          .then(() => status(`(${cells[0].x}, ${cells[0].y}) からの ${veinSize()}x${veinSize()} の鉱脈を消しました`));
         break;
       }
       state.client.call('remove', { x: cmd.x, y: cmd.y })
@@ -972,14 +973,31 @@ async function addItems(x, y) {
   status(`(${x}, ${y}) の${label}に ${itemName(item)} を ${ITEM_AMOUNT} 個`);
 }
 
+/** 鉱脈の大きさ（data/game.json の defaults.veinSize。Core Keeper は 2x2）。 */
+const veinSize = () => Math.max(1, (state.registry.game.defaults || {}).veinSize || 1);
+
+/** マスを、そのマスを含む鉱脈の塊（veinSize 四方。盤面に合わせて揃える）のマスに広げる。 */
+function veinCells(cells) {
+  const n = veinSize(), out = [], seen = new Set();
+  for (const c of cells) {
+    const x0 = Math.floor(c.x / n) * n, y0 = Math.floor(c.y / n) * n;
+    for (let dy = 0; dy < n; dy++) for (let dx = 0; dx < n; dx++) {
+      const k = `${x0 + dx},${y0 + dy}`;
+      if (!seen.has(k)) { seen.add(k); out.push({ x: x0 + dx, y: y0 + dy }); }
+    }
+  }
+  return out;
+}
+
 async function setResource(cells, quiet = false) {
   const item = $('itemSel').value;
+  cells = veinCells(cells);
   const { ok } = await state.client.call('resource', { item, cells, group: quiet });   // ドラッグの続きは1回の操作にまとめる
   if (!ok) {
     status(`${itemName(item)} は鉱脈になりません（data/items で resource: true のものだけ）`, true);
     return;
   }
-  if (!quiet) status(`(${cells[0].x}, ${cells[0].y}) に ${itemName(item)} の鉱脈`);
+  if (!quiet) status(`(${cells[0].x}, ${cells[0].y}) から ${veinSize()}x${veinSize()} に ${itemName(item)} の鉱脈`);
 }
 
 function itemName(id) {
@@ -1085,6 +1103,7 @@ function tipHTML(cell, c) {
   }
   if (c.miner) out += `<div class="sec">状態: ${esc(c.miner.state)}</div>`;
   if (c.device) out += `<div class="sec">状態: ${esc(c.device.state)}</div>`;
+  if (b && b.filter) out += `<div class="sec">フィルタ: ${esc(itemName(b.filter))} だけ運ぶ</div>`;
   if (c.ground && c.ground.length) out += stacksHTML('床', c.ground);
   if (c.resource) out += `<div class="sec">鉱脈: ${esc(itemName(c.resource))}</div>`;
   if (c.wire) out += `<div class="sec">床の層: ${esc(state.registry.building(c.wire).name)}</div>`;
@@ -1102,6 +1121,8 @@ async function inspect(x, y) {
     const { on } = await state.client.call('toggle', { x, y });
     if (on !== null) { status(`(${hit.x}, ${hit.y}) ${hitDef.name}を${on ? '入れました（電気を通す）' : '切りました（電気を通さない）'}`); return; }
   }
+  // アームはクリックでフィルタ（運ぶ物を1種類に絞る）を選ぶ
+  if (hitDef && hitDef.inserter) { await chooseFilter(hit); return; }
   const c = await state.client.call('inspect', { x, y });
   const parts = [];
   if (c.belt && c.belt.length) parts.push(`ベルト上: ${describe(c.belt)}`);
@@ -1124,6 +1145,19 @@ async function inspect(x, y) {
   const def = state.registry.building(b.type);
   status(`(${b.x}, ${b.y}) ${def.name}${def.directional ? ` / 向き ${b.dir}` : ''}`
     + (extra || `${def.note ? ` — ${def.note}` : ''}`));
+}
+
+/** アームのフィルタを選ぶ窓。 */
+async function chooseFilter(b) {
+  const options = [{ value: null, label: '（全部運ぶ）' }];
+  for (const it of state.registry.items.values()) options.push({ value: it.id, label: it.name || it.id });
+  const v = await askChoice({
+    title: 'アームのフィルタ', options, value: b.filter || null, ok: '決める',
+    message: `(${b.x}, ${b.y}) のアームが運ぶ物を1種類に絞ります（Core Keeper の Robot Arm のフィルタ）。絞ると、ほかの物は取りません`,
+  });
+  if (v === undefined) return;
+  const r = await state.client.call('filter', { x: b.x, y: b.y, item: v });
+  if (r.ok) status(v ? `(${b.x}, ${b.y}) のアームは ${itemName(v)} だけ運びます` : `(${b.x}, ${b.y}) のアームは全部運びます`);
 }
 
 function setView(snap) {

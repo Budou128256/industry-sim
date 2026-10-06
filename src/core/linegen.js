@@ -5,16 +5,13 @@
  * 外接する長方形の面積が小さい順、同じなら置く数が少ない順に並べる（ユーザーの指定）。
  *
  * 材料の取り方（ユーザーの選択「両方」）:
- *   ore   鉱脈から掘る。ドリルの正面（上）の1列に鉱脈が要る。設計図の resources に鉱脈を入れる（貼ると鉱脈も置く）
+ *   ore   鉱脈から掘る。鉱脈は 2x2 の塊（Core Keeper）で、ドリルを塊の下の辺に並べる。
+ *         設計図の resources に鉱脈を入れる（貼ると鉱脈も置く）
  *   chest 材料の箱から。人が箱に材料を入れる
  *
- * 型:
- *   own   機械ごとに専用のドリル（または箱）を付ける。ドリルの数＝機械の数
- *   tree  まとめて掘った材料（または箱の中身）を、スプリッターを2つに分ける木で、機械に均等に配る
- *         スプリッターは1個ずつの物も交互に分けるので、ドリルは必要な数だけで足りる
- * 製品の集め方:
- *   belt   製品をベルトで1つの箱へ集める
- *   chests 機械ごとに出口の箱を置く（own だけ）
+ * 型（ユーザーの判断で1つ）: まとめて掘った材料（または箱の中身）を、スプリッターを2つに分ける木で、
+ *   機械に均等に配る。スプリッターは1個ずつの物も交互に分けるので、ドリルは必要な数だけで足りる。
+ *   製品はベルトで集め、左端の出口の箱へ。材料の箱と出口の箱は、外接する長方形の同じ辺（左）に並ぶ
  *
  * このシミュレーターの決まりで、配り方に気をつけた点:
  *   アームは1回に1スタックを丸ごと運び、機械の入力は1スタックまで（9999 個）入る。
@@ -65,6 +62,7 @@ class Plan {
     this.obj = new Map();     // 設置物のマス
     this.wires = new Set();   // 電線のマス
     this.keep = new Set();    // 何も置かないマス（床に物が落ちるところ）
+    this.keepY = new Map();
     this.ores = [];           // 鉱脈のマス
     this.inputs = [];         // 材料を入れる箱のマス
     this.outputs = [];        // 製品が入る箱のマス
@@ -75,7 +73,7 @@ class Plan {
     this.obj.set(k, type);
     this.parts.push({ type, x, y, dir });
   }
-  hold(x, y) { this.keep.add(key(x, y)); }
+  hold(x, y) { this.keep.add(key(x, y)); this.keepY.set(key(x, y), y); }
   wire(x, y) {
     const k = key(x, y);
     if (this.wires.has(k)) return;
@@ -105,76 +103,38 @@ function unitE(P, machine, x, y, inputIsChest) {
   return x + 4;
 }
 
-/** own: 機械ごとに専用のドリル（箱）。下向きの流れで、機械を横に並べる。 */
-function planOwn(P, o) {
-  const def = P.registry.building(o.machine);
-  const k = o.count;
-  let y = 0;
-  for (let i = 0; i < k; i++) {
-    if (o.source === 'ore') {
-      P.ores.push({ x: i, y: 0 });
-      P.put(o.drill, i, 1, 'N');                           // 正面（上）の鉱脈を掘り、背面（下）へ落とす
-      P.hold(i, 2);
-    } else { P.put('chest', i, 2); P.inputs.push({ x: i, y: 2 }); }
-    P.put('inserter', i, 3, 'N');                          // 上から取り、下の機械へ
-  }
-  y = 4;
-  const front = !!def.machine.outputFront;
-  for (let i = 0; i < k; i++) {
-    if (front) P.put(o.machine, i, y, 'S');
-    else { P.put(o.machine, i, y, def.directional ? 'S' : 'N'); P.put('inserter', i, y + 1, 'N'); }
-  }
-  const oy = front ? y + 1 : y + 2;                        // 製品の出るマスの行
-  if (o.collect === 'chests') {
-    for (let i = 0; i < k; i++) {
-      if (front) { P.put('chest', i, oy); }                // 送り出し機械は正面の床に落とすので、箱では受けられない
-      else { P.put('chest', i, oy); P.outputs.push({ x: i, y: oy }); }
-    }
-    if (front) return false;
-    return true;
-  }
-  // ベルトで右へ集めて、端で箱へ
-  for (let i = 0; i < k; i++) P.put('belt', i, oy, i === k - 1 && k >= 3 ? 'S' : 'E');
-  if (k >= 3) {                                            // 下の行で左向きに: 落ちるマス・アーム・箱
-    P.hold(k - 1, oy + 1); P.put('inserter', k - 2, oy + 1, 'E'); P.put('chest', k - 3, oy + 1);
-    P.outputs.push({ x: k - 3, y: oy + 1 });
-  } else {
-    P.hold(k, oy); P.put('inserter', k + 1, oy, 'W'); P.put('chest', k + 2, oy);
-    P.outputs.push({ x: k + 2, y: oy });
-  }
-  return true;
-}
-
 /** tree: スプリッターの木で均等に配る。右向きの流れで、機械を縦に並べる。 */
 function planTree(P, o) {
   const k = o.count;
   const m = Math.ceil(Math.log2(k));
   const L = 1 << m;                                        // 葉（配り先）の数
   const D = o.source === 'ore' ? o.drills : 0;
-  const Xr = Math.max(D, 2);                               // 根のスプリッターの列
+  const Xr = o.source === 'chest' && L === 1 ? 0 : Math.max(D, 2);   // 根のスプリッターの列（箱から1台なら、箱が左端）
   const Xl = Xr + m - 1;                                   // 葉へ出すスプリッターの列（k=1 なら Xr-1）
   const leafRow = i => (L === 1 ? 0 : 3 * (i >> 1) + (i & 1) * 2);
-  // 木（葉の範囲 [lo, hi)）。中心の行を返す
+  // 木（葉の範囲 [lo, hi)）。物が西から入ってくるマス { row, x } を返す。
+  // 機械の無い葉しか無い側は作らない（台数が2の累乗でないとき。その分、残りの機械へ多めに配られる）
   const node = (lo, hi, level) => {
-    const X = Xr + level;
-    if (hi - lo === 2) {
-      const c = 3 * (lo >> 1) + 1;
-      P.put('splitter', X, c, 'N');
-      for (const [i, r] of [[lo, c - 1], [lo + 1, c + 1]]) { if (i < k) P.put('belt', X, r, 'E'); else P.hold(X, r); }
-      return c;
-    }
+    if (hi - lo === 1) return { row: leafRow(lo), x: Xl + 1 };         // 葉: 機械の手前の落ちるマス
     const mid = (lo + hi) >> 1;
-    const c1 = node(lo, mid, level + 1), c2 = node(mid, hi, level + 1);
-    const c = (c1 + c2) >> 1;
-    P.put('splitter', X, c, 'N');
-    for (let y = c - 1; y >= c1; y--) P.put('belt', X, y, y === c1 ? 'E' : 'N');
-    for (let y = c + 1; y <= c2; y++) P.put('belt', X, y, y === c2 ? 'E' : 'S');
-    return c;
+    if (mid >= k) return node(lo, mid, level + 1);
+    const X = Xr + level;
+    const a = node(lo, mid, level + 1), b = node(mid, hi, level + 1);
+    const c = (a.row + b.row) >> 1;
+    P.put('splitter', X, c, 'N');                                      // 西から入り、上下へ半分ずつ
+    for (let y = c - 1; y >= a.row; y--) P.put('belt', X, y, y === a.row ? 'E' : 'N');
+    for (let y = c + 1; y <= b.row; y++) P.put('belt', X, y, y === b.row ? 'E' : 'S');
+    for (const t of [a, b]) for (let x = X + 1; x < t.x; x++) P.put('belt', x, t.row, 'E');
+    return { row: c, x: X };
   };
-  const root = L === 1 ? 0 : node(0, L, 0);
+  const root = L === 1 ? 0 : node(0, L, 0).row;
   // 入口
   if (o.source === 'ore') {
-    for (let i = 0; i < D; i++) { P.ores.push({ x: i, y: -3 }); P.put(o.drill, i, -2, 'N'); }
+    // 鉱脈は 2x2 の塊（Core Keeper。data/game.json の veinSize）。ドリルは塊の下の辺に並べて上を掘る
+    const vs = Math.max(1, (P.registry.game.defaults || {}).veinSize || 1);
+    const blocks = Math.ceil(D / vs);
+    for (let j = 0; j < blocks; j++) for (let dy = 0; dy < vs; dy++) for (let dx = 0; dx < vs; dx++) P.ores.push({ x: j * vs + dx, y: -2 - vs + dy });
+    for (let i = 0; i < D; i++) P.put(o.drill, i, -2, 'N');
     for (let x = 0; x < Xr - 1; x++) P.put('belt', x, -1, 'E');
     for (let y = -1; y < root; y++) P.put('belt', Xr - 1, y, 'S');
     P.put('belt', Xr - 1, root, 'E');                      // 根のスプリッターへ（k=1 なら機械の手前の落ちるマスへ）
@@ -190,17 +150,23 @@ function planTree(P, o) {
     xo = unitE(P, o.machine, (L === 1 ? Xr : Xl + 1), r, chestIn);
     rows.push(r);
   }
-  // 製品: 右の列を下へ流し、いちばん下で箱へ
-  const top = Math.min(...rows), bot = Math.max(...rows);
-  for (let y = top; y <= bot; y++) P.put('belt', xo, y, 'S');
-  P.hold(xo, bot + 1); P.put('inserter', xo - 1, bot + 1, 'E'); P.put('chest', xo - 2, bot + 1);
-  P.outputs.push({ x: xo - 2, y: bot + 1 });
+  // 製品: 右の列を下へ流し、いちばん下の行を左へ戻して、左端の出口の箱へ。
+  // 材料の箱（左端）と出口の箱が、外接する長方形の同じ辺（左）に並ぶ（ユーザーの希望 2026-10-07）
+  const top = Math.min(...rows);
+  let bottom = Math.max(...P.parts.map(p => p.y));
+  for (const k2 of P.keep) bottom = Math.max(bottom, P.keepY.get(k2));
+  const yo = bottom + 1;                                     // 出口の行
+  for (let y = top; y < yo; y++) P.put('belt', xo, y, 'S');
+  for (let x = xo; x >= 3; x--) P.put('belt', x, yo, 'W');
+  P.hold(2, yo); P.put('inserter', 1, yo, 'E'); P.put('chest', 0, yo);   // 落ちるマス → アーム → 箱
+  P.outputs.push({ x: 0, y: yo });
   return true;
 }
 
+// ユーザーの判断（2026-10-07）「基本はスプリッターで均等に配る方法がいい」で、この型だけにした
+// （機械ごとに専用のドリル・箱を付ける型は、ドリルが台数ぶん要り、材料の箱が機械ごとに分かれるのでやめた）
 export const LINE_PATTERNS = [
   { id: 'tree', name: 'スプリッターで均等に配る', plan: planTree, collect: ['belt'] },
-  { id: 'own', name: '機械ごとに専用', plan: planOwn, collect: ['belt', 'chests'] },
 ];
 
 /* ---------- 電気 ---------- */

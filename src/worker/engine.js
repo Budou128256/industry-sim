@@ -175,6 +175,22 @@ export class Engine {
     return generateCircuits(this.registry, n, table);
   }
 
+  /** アームのフィルタを決める（item が null なら全部運ぶ）。アームでなければ { ok: false }。 */
+  op_filter({ x, y, item }) {
+    const b = this.world.at(x, y);
+    const def = b && this.registry.building(b.type);
+    if (!def || !def.inserter) return { ok: false };
+    if (item && !this.registry.item(item)) return { ok: false };
+    if ((b.filter || null) === (item || null)) return { ok: true, item: item || null };
+    // 置き直して記録する（元に戻す・やり直すにも乗る）。アームは中身を持たないので置き直しても困らない
+    this.record(item ? 'アームのフィルタ' : 'フィルタを外す', () => {
+      this.world.remove(b);
+      place(this.world, def, b.x, b.y, b.dir, { filter: item || null });
+    });
+    this.changed();
+    return { ok: true, item: item || null };
+  }
+
   /** 機械の自動配置（生産ライン）。盤面は変えない。 */
   op_genLine(opts) {
     return generateLines(this.registry, opts);
@@ -262,7 +278,7 @@ export class Engine {
     const b = world.at(x, y);
     const wire = world.floorAt(x, y);
     return {
-      building: b && { type: b.type, x: b.x, y: b.y, dir: b.dir },
+      building: b && { type: b.type, x: b.x, y: b.y, dir: b.dir, filter: b.filter || null },
       unpowered: !!(b && sim.unpowered.has(b.id)),
       power: sim.power.get(key(x, y)) || 0,
       wire: wire && wire.type,

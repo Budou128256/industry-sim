@@ -160,6 +160,11 @@
   ],
   "resources": [
    {
+    "x": 2,
+    "y": 7,
+    "item": "iron-ore"
+   },
+   {
     "x": 3,
     "y": 7,
     "item": "iron-ore"
@@ -172,6 +177,26 @@
    {
     "x": 5,
     "y": 7,
+    "item": "iron-ore"
+   },
+   {
+    "x": 2,
+    "y": 8,
+    "item": "iron-ore"
+   },
+   {
+    "x": 3,
+    "y": 8,
+    "item": "iron-ore"
+   },
+   {
+    "x": 4,
+    "y": 8,
+    "item": "iron-ore"
+   },
+   {
+    "x": 5,
+    "y": 8,
     "item": "iron-ore"
    }
   ]

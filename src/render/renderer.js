@@ -252,6 +252,7 @@ export class Renderer {
       if (sim.miners.has(b.id)) this.drawMinerOutput(b);
       if (sim.collectors && sim.collectors.has(b.id)) this.drawCollectorArea(b);
       if (sim.signals && sim.signals.has(b.id)) this.drawSignal(b, sim.signals.get(b.id));
+      if (b.filter) this.drawFilter(b);
       if (m && (machineDef(this.registry, b) || {}).outputFront) this.markCell(machineOutputCell(b), 'rgba(250,204,21,0.75)');
     }
     if (!sim.ground.size) return;
@@ -299,6 +300,19 @@ export class Renderer {
   drawMinerOutput(b) {
     for (const c of minerTargets(b)) this.markCell(c, 'rgba(56,189,248,0.75)');
     this.markCell(minerOutput(b), 'rgba(250,204,21,0.75)');
+  }
+
+  /** アームのフィルタ（右上の小さな四角を、運ぶ物の色で塗る）。 */
+  drawFilter(b) {
+    const ctx = this.ctx, t = this.tile;
+    const { px, py } = this.toScreen(b.x, b.y);
+    const item = this.registry.item(b.filter);
+    const s = Math.max(4, t * 0.28);
+    ctx.fillStyle = (item && item.color) || '#e5e7eb';
+    ctx.fillRect(px + t - s - 2, py + 2, s, s);
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + t - s - 2 + 0.5, py + 2.5, s - 1, s - 1);
   }
 
   /** レバー・回路の入り切り（左上の丸。入っていれば緑、切れていれば灰色）。 */

@@ -4,7 +4,7 @@
  *   lever   レバー。「Generates a low amount of electricity that can be turned on and off」
  *           「currently (v1.0.0.8) levers can power any electrical device, including drills」
  *           → **入っているあいだ電源になる**（発電機は要らない。ユーザーの指摘 2026-10-07）。強さは signal.source
- *             （資料に数が無いので、同じ「low amount」と書かれた感圧板と同じ 5 に仮に決めた）。
+ *             （資料に数は無い。ユーザーが教えてくれたゲームの値で 12＝発電機の半分。2026-10-07）。
  *             入っているときは電線と同じく電気も通す。置いた直後は切れている。クリックで入り切り
  *   plate   感圧板。「Generates a low amount of electricity」「stepped on by the player」
  *           → 人はいないので、**そのマスの床に物があるあいだ**電源になる。強さは signal.source（仮に 5）
@@ -101,7 +101,7 @@ export function computeSignals(sim, force = false) {
       else if (s.type === 'logic' || s.type === 'delay') kind.set(k, 'g');
       else if (s.type === 'lever') {
         kind.set(k, st && st.on ? 'c' : 'off');
-        if (st && st.on) starts.push({ x: c.x, y: c.y, level: (s.source || 5) + 1 });
+        if (st && st.on) starts.push({ x: c.x, y: c.y, level: (s.source || 12) + 1 });
       }
       else if (s.type === 'plate') {
         kind.set(k, 'off');

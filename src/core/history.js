@@ -17,7 +17,7 @@ import { place } from './placement.js';
 export const HISTORY_LIMIT = 100;
 
 /** 記録の中の建物（置き場所を引くのに要る分だけ写す）。 */
-const plain = b => ({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer });
+const plain = b => ({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer, ...(b.filter ? { filter: b.filter } : {}) });
 
 export class History {
   constructor() {
@@ -98,7 +98,7 @@ export function applyEntry(world, registry, sim, entry, direction) {
     const add = (c.op === 'add') !== undo;            // undo では add を消し、remove を置き直す
     if (add) {
       const def = registry.building(c.b.type);
-      if (!place(world, def, c.b.x, c.b.y, c.b.dir)) skipped++;
+      if (!place(world, def, c.b.x, c.b.y, c.b.dir, { filter: c.b.filter })) skipped++;
     } else {
       const b = findBuilding(world, c.b);
       if (b) world.remove(b); else skipped++;
