@@ -198,7 +198,7 @@ const simDefs = {
 };
 const simReg = {
   building: id => simDefs[id],
-  item: id => ({ ore: { id: 'ore', stackSize: 10 }, plate: { id: 'plate', stackSize: 10 } }[id]),
+  item: id => ({ ore: { id: 'ore', stackSize: 10, resource: true }, plate: { id: 'plate', stackSize: 10 } }[id]),
   recipes: new Map([['plate', { id: 'plate', inputs: { ore: 1 }, outputs: { plate: 1 }, craftTime: 1, machines: ['smelter', 'proc'] }]]),
 };
 function simWorld(w = 10, h = 3) { return new World({ width: w, height: h }); }
@@ -929,6 +929,101 @@ test('エンジン: まとめて移動（中身も）と、上書きの貼り付
   eng.handle({ id: 5, op: 'paste', blueprint: res(3).result, x: 9, y: 8, overwrite: true });
   eq(res(5).result, { placed: 2, skipped: 0, replaced: 1, same: 0 });
   eq(eng.world.at(9, 9).type, 'belt');
+});
+
+/* ---- 元に戻す / やり直す ---- */
+function undoEngine() {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  let id = 100;
+  const call = (op, args = {}) => {
+    const n = ++id;
+    eng.handle({ id: n, op, ...args });
+    const r = sent.find(m => m.re === n);
+    if (r.error) throw new Error(r.error);
+    return r.result;
+  };
+  return { eng, call };
+}
+test('元に戻す: ドラッグで置いた分は1回で戻り、やり直すとまた置かれる', () => {
+  const { eng, call } = undoEngine();
+  call('dragStart', { type: 'belt', x: 1, y: 1, dir: 'E' });
+  call('dragTo', { cells: [{ x: 2, y: 1 }, { x: 3, y: 1 }] });
+  call('dragTo', { cells: [{ x: 3, y: 2 }] });
+  call('place', { type: 'chest', cells: [{ x: 8, y: 8 }] });
+  eq(eng.world.count, 5);
+  eq(call('undo').label, '設置');
+  eq(eng.world.count, 4, '箱だけ戻っていない');
+  const r = call('undo');
+  eq([r.done, eng.world.count, r.undo, r.redo], [true, 0, 0, 2], 'ドラッグが1回で戻っていない');
+  eq(call('undo').done, false);
+  call('redo');
+  eq([eng.world.count, eng.world.at(3, 1).dir, eng.world.at(3, 2).dir], [4, 'S', 'S'], '曲がり角の向きが戻っていない');
+  call('remove', { x: 1, y: 1 });
+  eq(call('redo').done, false, '新しい操作の後もやり直せる');
+});
+test('元に戻す: 撤去・回転・鉱脈を戻す（撤去した箱は空で戻り、中身は床のまま）', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 2, y: 2 }] });
+  call('place', { type: 'belt', cells: [{ x: 4, y: 2, dir: 'E' }] });
+  eng.sim.addItems(2, 2, 'ore', 5);
+  call('remove', { x: 2, y: 2 });
+  call('rotate', { x: 4, y: 2 });
+  call('resource', { item: 'ore', cells: [{ x: 6, y: 6 }] });
+  call('resource', { item: 'ore', cells: [{ x: 7, y: 6 }], group: true });
+  eq([eng.world.resourceAt(6, 6), eng.world.resourceAt(7, 6)], ['ore', 'ore']);
+  eq(call('undo').label, '鉱脈');
+  eq([eng.world.resourceAt(6, 6), eng.world.resourceAt(7, 6)], [null, null], '塗った鉱脈が1回で戻っていない');
+  call('undo');
+  eq(eng.world.at(4, 2).dir, 'E', '回転が戻っていない');
+  call('undo');
+  eq(eng.world.at(2, 2).type, 'chest', '撤去が戻っていない');
+  eng.sim.sync();
+  eq([total(eng.sim.contentsAt(2, 2).container.slots.filter(Boolean)), total(eng.sim.contentsAt(2, 2).ground)], [0, 5]);
+});
+test('元に戻す: まとめて移動を戻すと中身も元の場所へ戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 1, y: 1 }] });
+  eng.sim.addItems(1, 1, 'plate', 7);
+  call('move', { rect: { x0: 1, y0: 1, x1: 1, y1: 1 }, x: 5, y: 5 });
+  eq(eng.world.at(5, 5).type, 'chest');
+  eq(call('undo').label, '移動');
+  eq([eng.world.at(5, 5), eng.world.at(1, 1).type], [null, 'chest']);
+  eng.sim.sync();
+  eq(total(eng.sim.contentsAt(1, 1).container.slots.filter(Boolean)), 7, '中身が戻っていない');
+  call('redo');
+  eng.sim.sync();
+  eq(total(eng.sim.contentsAt(5, 5).container.slots.filter(Boolean)), 7, 'やり直しで中身が付いてこない');
+});
+test('元に戻す: 全消去と読み込みは、中身ごと前の盤面へ戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 1, y: 1 }] });
+  eng.sim.addItems(1, 1, 'ore', 3);
+  const save = call('save');
+  call('clear');
+  eq(eng.world.count, 0);
+  eq(call('undo').label, '全消去');
+  eq(total(eng.sim.contentsAt(1, 1).container.slots.filter(Boolean)), 3, '全消去の前の中身が戻っていない');
+  call('redo');
+  eq(eng.world.count, 0, 'やり直しで消えない');
+  call('load', { data: save });
+  eq(eng.world.count, 1);
+  eq(call('undo').label, '読み込み');
+  eq(eng.world.count, 0, '読み込みの前に戻っていない');
+  call('load', { data: save, record: false });
+  eq(call('undo').done, false, '起動時の読み込みが記録に残った');
+});
+test('元に戻す: 貼り付け・切り取りも1回ずつ戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 2, y: 1, dir: 'E' }] });
+  const bp = call('copy', { rect: { x0: 1, y0: 1, x1: 2, y1: 1 } });
+  call('paste', { blueprint: bp, x: 5, y: 5 });
+  call('removeArea', { rect: { x0: 1, y0: 1, x1: 2, y1: 1 }, label: '切り取り' });
+  eq(eng.world.count, 2);
+  eq(call('undo').label, '切り取り');
+  eq(eng.world.count, 4);
+  eq(call('undo').label, '貼り付け');
+  eq([eng.world.count, eng.world.at(5, 5)], [2, null]);
 });
 
 /* ---- 送り出し加工機 ---- */

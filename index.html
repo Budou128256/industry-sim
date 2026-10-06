@@ -77,6 +77,11 @@
 <div class="wrap">
   <aside>
     <div id="palette"></div>
+    <div class="group">編集</div>
+    <div class="selbtns">
+      <button id="btnUndo" title="Ctrl+Z（置く・消す・回す・移動・貼り付け・鉱脈・全消去・読み込みを戻す）">元に戻す</button>
+      <button id="btnRedo" title="Ctrl+Y / Ctrl+Shift+Z">やり直す</button>
+    </div>
     <div class="group">範囲選択・設計図</div>
     <button class="pal" id="toolSelect" data-id="__select"><i style="background:#38bdf8"></i><span class="n">範囲を選ぶ</span><span class="sz">ドラッグ</span></button>
     <div class="selbtns">
@@ -115,6 +120,7 @@
       重なる所は置きません。Ctrl（Mac は ⌘）を押しながら置くと上書き<br>
       下見の枠: 緑 置ける / 橙 上書き / 赤 置けない / 灰 同じ物がもうある<br>
       マウスを0.8秒止める: そのマスの詳細（種類・スタック）<br>
+      Ctrl+Z: 元に戻す、Ctrl+Y: やり直す（置き方だけ。中身と時間は戻さない）<br>
       Esc: 選択を解除<br>
       何も選ばずにクリック: 中身を見る<br>
       <br>

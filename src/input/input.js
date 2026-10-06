@@ -14,6 +14,7 @@
  *   { type:'move' }                   M: 選んだ範囲をまとめて動かす
  *   { type:'leave' }                  マウスが盤面の外へ出た
  *   { type:'copy' | 'cut' | 'paste' | 'delete' }   Ctrl+C / Ctrl+X / Ctrl+V / Delete
+ *   { type:'undo' | 'redo' }          Ctrl+Z 元に戻す / Ctrl+Y・Ctrl+Shift+Z やり直す
  *   { type:'fit' }                    盤面全体を表示（F / Home）
  *   { type:'redraw' }                 画面を動かした（描き直す）
  *
@@ -107,7 +108,7 @@ export class Input {
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (k === 'Control' || k === 'Meta') { this.setCtrl(true); return; }
       if (e.ctrlKey || e.metaKey) {
-        const cmd = { c: 'copy', x: 'cut', v: 'paste' }[k];
+        const cmd = { c: 'copy', x: 'cut', v: 'paste', z: e.shiftKey ? 'redo' : 'undo', y: 'redo' }[k];
         if (cmd) { e.preventDefault(); this.emit({ type: cmd }); }
         return;
       }

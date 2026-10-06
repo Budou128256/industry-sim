@@ -31,6 +31,7 @@ my-application/          （手元のフォルダ名。GitHub では industry-si
     │   ├─ placement.js  置ける/置けないの判定、設置・撤去・回転、ドラッグで通った道どおりに置く
     │   ├─ sim.js        時間と中身（ベルト・箱・炉・採掘機・床）。World の変更には sync() で追いつく（変更の記録を読み、変わった所の近くだけ計算し直す）
     │   ├─ belt.js       ベルトの線
+    │   ├─ history.js    元に戻す / やり直す（置き方の変更を記録して逆に当てる）
     │   ├─ blueprint.js  設計図（範囲を写す・回す・反転・貼る・上書き・まとめて移動。Phase 7b / 7c）
     │   ├─ splitter.js   スプリッター（ベルトの分岐。Phase 7）
     │   ├─ inserter.js   アーム

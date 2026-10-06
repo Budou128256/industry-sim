@@ -101,6 +101,8 @@ async function main() {
   $('btnCut').onclick = () => onCommand({ type: 'cut' });
   $('btnDelete').onclick = () => onCommand({ type: 'delete' });
   $('btnPaste').onclick = () => onCommand({ type: 'paste' });
+  $('btnUndo').onclick = () => onCommand({ type: 'undo' });
+  $('btnRedo').onclick = () => onCommand({ type: 'redo' });
   $('btnMove').onclick = () => onCommand({ type: 'move' });
   $('btnPRot').onclick = () => onCommand({ type: 'rotate', ...(state.renderer.hover || { x: -1, y: -1 }) });
   $('btnFlipH').onclick = () => onCommand({ type: 'flip', axis: 'h' });
@@ -155,7 +157,7 @@ async function restoreAutosave() {
   }
   if (!data) return;
   try {
-    const r = await state.client.call('load', { data });
+    const r = await state.client.call('load', { data, record: false });
     status(`前回の続きを読み込みました（${when(r.savedAt)} に保存・建物 ${r.count}）`
       + (r.skipped ? ` — 知らない・置けない建物 ${r.skipped} 個を飛ばしました` : ''), !!r.skipped);
   } catch (e) {
@@ -381,6 +383,7 @@ function onCommand(cmd) {
       else status('コピーした範囲がありません（範囲を選んで Ctrl+C）', true);
       return;
     case 'move': startMove(renderer.hover, false); return;
+    case 'undo': case 'redo': undoRedo(cmd.type); return;
     case 'flip':
       status('反転（V・ボタン）は、貼り付け中（Ctrl+V）か移動中（M）に使えます');
       return;
@@ -457,6 +460,17 @@ function onCommand(cmd) {
   }
 }
 
+/* ---------- 元に戻す / やり直す（中身は core/history.js） ---------- */
+
+async function undoRedo(kind) {
+  if (state.paste) exitPaste(true);
+  const r = await state.client.call(kind);
+  const word = kind === 'undo' ? '元に戻しました' : 'やり直しました';
+  if (!r.done) { status(kind === 'undo' ? 'これ以上は戻せません' : 'やり直せる操作がありません'); return; }
+  status(`「${r.label}」を${word}（戻せる ${r.undo}・やり直せる ${r.redo}）`
+    + (r.skipped ? ` — その後に置いた物と重なるなどで ${r.skipped} 個は戻せませんでした` : ''), !!r.skipped);
+}
+
 /* ---------- 範囲選択・コピー・貼り付け・設計図 ---------- */
 
 function setSelection(rect) {
@@ -484,7 +498,7 @@ async function copySelection(cut) {
   const bp = await state.client.call('copy', { rect: state.selection });
   if (!bp.buildings.length) { status('範囲の中に（全部が入っている）建物がありません', true); return; }
   state.clipboard = bp;
-  if (cut) await state.client.call('removeArea', { rect: state.selection });
+  if (cut) await state.client.call('removeArea', { rect: state.selection, label: '切り取り' });
   updateSelButtons();
   status(`建物 ${bp.buildings.length} 個を${cut ? '切り取り' : 'コピー'}しました（${bp.width}x${bp.height}）。Ctrl+V で貼ります`);
   if (cut) setSelection(null);
@@ -747,7 +761,7 @@ async function addItems(x, y) {
 
 async function setResource(cells, quiet = false) {
   const item = $('itemSel').value;
-  const { ok } = await state.client.call('resource', { item, cells });
+  const { ok } = await state.client.call('resource', { item, cells, group: quiet });   // ドラッグの続きは1回の操作にまとめる
   if (!ok) {
     status(`${itemName(item)} は鉱脈になりません（data/items で resource: true のものだけ）`, true);
     return;
