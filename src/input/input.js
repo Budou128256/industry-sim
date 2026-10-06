@@ -12,6 +12,7 @@
  *   { type:'hover', x, y, ctrl }      マウスが動いた（Ctrl を押した・離したときも出す）
  *   { type:'flip', axis }             V: 上下反転（axis 'v'）。左右反転（'h'）はボタンだけ（キーは無し。ユーザーの希望）
  *   { type:'move' }                   M: 選んだ範囲をまとめて動かす
+ *   { type:'leave' }                  マウスが盤面の外へ出た
  *   { type:'copy' | 'cut' | 'paste' | 'delete' }   Ctrl+C / Ctrl+X / Ctrl+V / Delete
  *   { type:'fit' }                    盤面全体を表示（F / Home）
  *   { type:'redraw' }                 画面を動かした（描き直す）
@@ -84,6 +85,8 @@ export class Input {
         this.emit({ type: 'hover', ...cell, ctrl: this.ctrl });
       }
     });
+
+    cv.addEventListener('mouseleave', () => this.emit({ type: 'leave' }));
 
     window.addEventListener('mouseup', e => {
       if (this.dragStart) this.emit({ type: 'release', ctrl: e.ctrlKey || e.metaKey });

@@ -356,6 +356,7 @@ function selectBuilding(id) {
 
 /** Input から来たコマンドをここで実行する。 */
 function onCommand(cmd) {
+  tipCommand(cmd);
   const { registry, renderer } = state;
   const world = state.view.world;
   const tool = state.selected === ITEM_TOOL || state.selected === RESOURCE_TOOL;
@@ -764,6 +765,105 @@ function describe(list) {
   const sum = new Map();
   for (const s of list) if (s) sum.set(s.item, (sum.get(s.item) || 0) + s.count);
   return [...sum].map(([id, n]) => `${itemName(id)} ${n}`).join(', ');
+}
+
+/* ---------- カーソルを止めたときの詳細（ユーザーの依頼 2026-10-06） ---------- */
+
+/** カーソルを同じマスに止めてから詳細を出すまでの時間（ミリ秒）。 */
+const TIP_DELAY = 800;
+/** 出している間、中身を読み直す間隔（ミリ秒。再生中は中身が動くので）。 */
+const TIP_REFRESH = 400;
+/** 1つの欄に並べるスタックの最大数（多いときは残りを数だけ出す）。 */
+const TIP_MAX_STACKS = 12;
+const tip = { cell: null, timer: 0, refresh: 0, shown: false };
+
+/** マウスの動きに合わせて、詳細を出す・消す。 */
+function tipCommand(cmd) {
+  if (cmd.type === 'hover') {
+    const c = tip.cell;
+    if (c && c.x === cmd.x && c.y === cmd.y) return;     // 同じマス（Ctrl を押しただけ等）はそのまま
+    hideTip();
+    if (state.paste || document.body.classList.contains('modal-open')) return;
+    tip.cell = { x: cmd.x, y: cmd.y };
+    tip.timer = setTimeout(showTip, TIP_DELAY);
+    return;
+  }
+  // 押した・ドラッグした・画面を動かした・盤面の外へ出た・やめた などは消す
+  if (['place', 'remove', 'drag', 'redraw', 'leave', 'cancel', 'rotate', 'paste', 'move', 'fit'].includes(cmd.type)) hideTip();
+}
+
+function hideTip() {
+  clearTimeout(tip.timer); clearInterval(tip.refresh);
+  tip.timer = 0; tip.refresh = 0; tip.cell = null; tip.shown = false;
+  $('tip').hidden = true;
+}
+
+async function showTip() {
+  const cell = tip.cell;
+  if (!cell) return;
+  await updateTip(cell);
+  if (tip.cell !== cell || !tip.shown) return;
+  tip.refresh = setInterval(() => updateTip(cell), TIP_REFRESH);
+}
+
+async function updateTip(cell) {
+  let c;
+  try { c = await state.client.call('inspect', cell); } catch { return; }
+  if (tip.cell !== cell) return;                       // 待っている間に別のマスへ動いた
+  const html = tipHTML(cell, c);
+  const el = $('tip');
+  if (!html) { el.hidden = true; tip.shown = false; return; }
+  el.innerHTML = html;
+  el.hidden = false;
+  tip.shown = true;
+  // マスの右下に出す。画面からはみ出すなら左・上へ
+  const rect = state.renderer.canvas.getBoundingClientRect();
+  const { px, py } = state.renderer.toScreen(cell.x + 1, cell.y + 1);
+  let left = rect.left + px + 8, top = rect.top + py + 8;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  if (left + w > window.innerWidth - 4) left = rect.left + px - state.renderer.tile - w - 8;
+  if (top + h > window.innerHeight - 4) top = rect.top + py - state.renderer.tile - h - 8;
+  el.style.left = `${Math.max(4, left)}px`;
+  el.style.top = `${Math.max(4, top)}px`;
+}
+
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+/** スタックの列を「何種類・何スタック・合計いくつ」と、1スタックずつの行にする。 */
+function stacksHTML(title, list, extra = '') {
+  const stacks = (list || []).filter(Boolean);
+  const kinds = new Set(stacks.map(s => s.item)).size;
+  const total = stacks.reduce((a, s) => a + s.count, 0);
+  let out = `<div class="sec">${esc(title)}: ${stacks.length ? `${kinds} 種類・${stacks.length} スタック・計 ${total}` : '空'}${extra}</div>`;
+  for (const s of stacks.slice(0, TIP_MAX_STACKS)) {
+    const it = state.registry.item(s.item) || {};
+    out += `<div class="st"><i style="background:${esc(it.color || '#94a3b8')}"></i>${esc(itemName(s.item))} ×${s.count}</div>`;
+  }
+  if (stacks.length > TIP_MAX_STACKS) out += `<div class="st">…ほか ${stacks.length - TIP_MAX_STACKS} スタック</div>`;
+  return out;
+}
+
+/** 詳細の中身。何も無いマスなら null（出さない）。 */
+function tipHTML(cell, c) {
+  const b = c.building;
+  const def = b && state.registry.building(b.type);
+  let out = '';
+  if (def) out += `<div class="h">${esc(def.name)}</div><div class="sec">(${b.x}, ${b.y})${def.directional ? `・向き ${b.dir}` : ''}</div>`;
+  else out += `<div class="h">(${cell.x}, ${cell.y})</div>`;
+  if (c.belt) out += stacksHTML('ベルトの上', c.belt);
+  if (c.container) out += stacksHTML('中身', c.container.slots, `（${c.container.slots.filter(Boolean).length}/${c.container.slots.length} 枠）`);
+  if (c.machine) {
+    out += `<div class="sec">状態: ${esc(c.machine.state)}</div>`;
+    out += stacksHTML('入力', [c.machine.input]) + stacksHTML('出力', [c.machine.output]);
+  }
+  if (c.miner) out += `<div class="sec">状態: ${esc(c.miner.state)}</div>`;
+  if (c.ground && c.ground.length) out += stacksHTML('床', c.ground);
+  if (c.resource) out += `<div class="sec">鉱脈: ${esc(itemName(c.resource))}</div>`;
+  if (c.wire) out += `<div class="sec">床の層: ${esc(state.registry.building(c.wire).name)}</div>`;
+  if (c.unpowered) out += '<div class="sec" style="color:#f87171">電気が届いていません</div>';
+  else if (c.power > 0) out += `<div class="sec">電気の強さ: ${c.power}</div>`;
+  const nothing = !def && !(c.ground && c.ground.length) && !c.resource && !c.wire;
+  return nothing ? null : out;
 }
 
 async function inspect(x, y) {
