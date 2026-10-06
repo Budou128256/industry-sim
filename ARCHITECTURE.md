@@ -14,8 +14,9 @@
 ## 責務の分担
 
 ```
-my-application/
+my-application/          （手元のフォルダ名。GitHub では industry-sim）
 ├─ index.html            画面の骨組み（DOMはUIだけ。盤面は Canvas）
+├─ tests.html / bench.html  テストと速さの測定のページ
 ├─ serve.py              開発用の小さなサーバ（ESモジュールは file:// で動かないため）
 ├─ data/                 ★ データ駆動。ここを足すだけで中身が増える
 │   ├─ items/            アイテム定義
@@ -27,8 +28,8 @@ my-application/
     │   ├─ grid.js       座標・近傍・範囲・マスの鍵（数値）
     │   ├─ chunks.js     32x32 の区画でマスごとの値を持つ（World の層の入れ物）
     │   ├─ world.js      World（grid + buildings）。状態の持ち主。物の層・床の層（電線）・鉱脈をチャンクで持ち、変更を記録する
-    │   ├─ placement.js  置ける/置けないの判定、設置・撤去・回転
-    │   ├─ sim.js        時間と中身（ベルト・箱・床）。World の変更には sync() で追いつく（変更の記録を読み、変わった所の近くだけ計算し直す）
+    │   ├─ placement.js  置ける/置けないの判定、設置・撤去・回転、ドラッグで通った道どおりに置く
+    │   ├─ sim.js        時間と中身（ベルト・箱・炉・採掘機・床）。World の変更には sync() で追いつく（変更の記録を読み、変わった所の近くだけ計算し直す）
     │   ├─ belt.js       ベルトの線
     │   ├─ inserter.js   アーム
     │   ├─ inventory.js  スロットとスタックの列
@@ -43,17 +44,19 @@ my-application/
     ├─ client.js         画面から Engine を呼ぶ窓口（Worker が使えなければ同じスレッドで動かす）
     ├─ storage.js        ブラウザの中（IndexedDB）への保存
     ├─ render/
-    │   ├─ renderer.js   World を**読むだけ**。Canvas に描く
+    │   ├─ renderer.js   World（の写し）を**読むだけ**。Canvas に描く
     │   └─ view.js       Worker から届いた写しを World / Sim と同じ形に戻す
     ├─ input/
     │   └─ input.js      入力を**コマンド**に変える。World を直接書き換えない
-    └─ app.js            配線（UI・Input・Renderer・client をつなぐ。World には直接触らない）
+    ├─ app.js            配線（UI・Input・Renderer・client をつなぐ。World には直接触らない）
+    ├─ tests.js          core の自動テスト
+    └─ bench.js          速さの測定
 ```
 
 ### 守る約束
 
 1. **core は描画もDOMも知らない。** `document` や `canvas` を core から触らない。
-   これを守ると、あとで core をそのまま Web Worker に移せる（Phase 5）。
+   これを守ったので、core をそのまま Web Worker に移せた（Phase 5b）。
 2. **renderer は World を書き換えない。** 読むだけ。
 3. **input は World を直接書き換えない。** 「何をしたいか」をコマンドとして出し、
    app がそれを core に渡す。あとで取り消し（undo）や記録を足しやすくする。
