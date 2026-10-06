@@ -15,6 +15,7 @@ import { makeSnapshot } from '../core/snapshot.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from '../core/save.js';
 import { key } from '../core/grid.js';
 import { toggleLever } from '../core/signal.js';
+import { generateCircuits } from '../core/circuitgen.js';
 import { buildingsInside, captureBlueprint, checkBlueprint, moveArea, pasteBlueprint } from '../core/blueprint.js';
 import { History, applyEntry } from '../core/history.js';
 
@@ -166,6 +167,11 @@ export class Engine {
     const on = toggleLever(this.sim, x, y);
     if (on !== null) { this.sim.sync(); this.changed(); }
     return { on };
+  }
+
+  /** 回路の自動生成。table は長さ 2^n の真偽の並び（A が上の桁）。盤面は変えない。 */
+  op_genCircuit({ n, table }) {
+    return generateCircuits(this.registry, n, table);
   }
 
   op_items({ x, y, item, count }) {

@@ -88,22 +88,31 @@ export function computeSignals(sim, force = false) {
   const kind = new Map();
   const starts = [];
   const gates = [];
+  // 先に部品のマスを決める（同じマスの床に電線があっても、部品の決まりが勝つ。切れたレバーの下の電線は通さない）
   world.forEach(b => {
-    const p = powerDef(registry, b), s = signalDef(registry, b);
-    const st = s && sim.signals.get(b.id);
+    const s = signalDef(registry, b);
+    if (!s) return;
+    const st = sim.signals.get(b.id);
     for (const c of footprint(b.x, b.y, b.size, b.dir)) {
       const k = key(c.x, c.y);
-      if (s && s.type === 'cross') { kind.set(k, 'x'); continue; }
-      if (s && (s.type === 'logic' || s.type === 'delay')) { kind.set(k, 'g'); continue; }
-      if (s && s.type === 'lever') { if (st && st.on && kind.get(k) !== 'x') kind.set(k, 'c'); continue; }
-      if (s && s.type === 'plate') {
+      if (s.type === 'cross') kind.set(k, 'x');
+      else if (s.type === 'logic' || s.type === 'delay') kind.set(k, 'g');
+      else if (s.type === 'lever') kind.set(k, st && st.on ? 'c' : 'off');
+      else if (s.type === 'plate') {
+        kind.set(k, 'off');
         if (plateActive(sim, b)) starts.push({ x: c.x, y: c.y, level: (s.source || 5) + 1 });
-        continue;
       }
-      if (p && p.conducts && !kind.has(k)) kind.set(k, 'c');
-      if (p && p.source > 0) starts.push({ x: c.x, y: c.y, level: p.source + 1 });
     }
-    if (s && (s.type === 'logic' || s.type === 'delay')) gates.push({ b, def: s, st });
+    if (s.type === 'logic' || s.type === 'delay') gates.push({ b, def: s, st });
+  });
+  world.forEach(b => {
+    const p = powerDef(registry, b);
+    if (!p || signalDef(registry, b)) return;
+    for (const c of footprint(b.x, b.y, b.size, b.dir)) {
+      const k = key(c.x, c.y);
+      if (p.conducts && !kind.has(k)) kind.set(k, 'c');
+      if (p.source > 0) starts.push({ x: c.x, y: c.y, level: p.source + 1 });
+    }
   });
 
   const levelIn = (best, gateOut, g, cell) => {

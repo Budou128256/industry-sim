@@ -108,6 +108,9 @@ async function main() {
   $('btnFlipH').onclick = () => onCommand({ type: 'flip', axis: 'h' });
   $('btnFlipV').onclick = () => onCommand({ type: 'flip', axis: 'v' });
   $('btnSaveBp').onclick = saveBlueprint;
+  $('cgN').onchange = drawCircuitTable;
+  $('btnGen').onclick = genCircuit;
+  drawCircuitTable();
   $('btnFit').onclick = () => onCommand({ type: 'fit' });
   $('btnZoomIn').onclick = () => { state.renderer.zoomCenter(1.25); onCommand({ type: 'redraw' }); };
   $('btnZoomOut').onclick = () => { state.renderer.zoomCenter(1 / 1.25); onCommand({ type: 'redraw' }); };
@@ -240,6 +243,71 @@ async function refreshExamples() {
     box.appendChild(el);
   }
   if (!list.length) box.innerHTML = '<div class="sub">（examples/ が見つかりません）</div>';
+}
+
+/* ---------- 回路の自動生成 ---------- */
+
+const CG_NAMES = ['A', 'B', 'C'];
+
+/** 入力の数に合わせて、組み合わせの表（どの組み合わせで電気を出すか）を描き直す。 */
+function drawCircuitTable() {
+  const n = Number($('cgN').value);
+  const box = $('cgTable');
+  let html = '<tr>' + CG_NAMES.slice(0, n).map(c => `<th>${c}</th>`).join('') + '<th>出す</th></tr>';
+  for (let r = 0; r < 1 << n; r++) {
+    html += '<tr>';
+    for (let i = 0; i < n; i++) html += `<td>${(r >> (n - 1 - i)) & 1 ? '入' : '切'}</td>`;
+    html += `<td><input type="checkbox" data-r="${r}"></td></tr>`;
+  }
+  box.innerHTML = html;
+  $('cgList').innerHTML = '';
+  $('cgText').textContent = '';
+}
+
+async function genCircuit() {
+  const n = Number($('cgN').value);
+  const table = [];
+  for (let r = 0; r < 1 << n; r++) table.push(!!$('cgTable').querySelector(`input[data-r="${r}"]`).checked);
+  if (!table.some(Boolean)) { status('電気を出したい組み合わせに、1つ以上印を付けてください', true); return; }
+  $('btnGen').disabled = true;
+  $('cgText').textContent = '作っています…（型ごとに作って、全部の組み合わせを確かめています）';
+  $('cgList').innerHTML = '';
+  try {
+    const res = await state.client.call('genCircuit', { n, table });
+    $('cgText').textContent = `式: ${res.text}`;
+    showCircuitList(res, n);
+  } catch (e) {
+    $('cgText').textContent = '';
+    status(`回路を作れません: ${e.message}`, true);
+  } finally {
+    $('btnGen').disabled = false;
+  }
+}
+
+function showCircuitList(res, n) {
+  const box = $('cgList');
+  box.innerHTML = '';
+  if (!res.candidates.length) {
+    box.innerHTML = '<div class="sub">この条件では、どの型でも正しく動く配置を作れませんでした</div>';
+    return;
+  }
+  res.candidates.forEach((c, i) => {
+    const el = document.createElement('button');
+    el.className = 'pal cand';
+    el.title = 'クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）';
+    el.innerHTML = '<span class="n"></span><span class="sz"></span>';
+    el.querySelector('.n').textContent = `${i + 1}. ${c.patternName}`;
+    el.querySelector('.sz').textContent = `${c.width}×${c.height}=${c.area}・${c.count}個`;
+    el.title = `論理回路 ${c.gates} 個。クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）`;
+    el.onclick = () => {
+      for (const b of box.querySelectorAll('.cand')) b.classList.toggle('on', b === el);
+      enterPaste(c.blueprint);
+      const ins = c.input.map((p, k) => `${CG_NAMES[k]}=(${p.x},${p.y})`).join(' ');
+      status(`${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個。設計図の中で、レバー ${ins}、出力の電線 (${c.output.x},${c.output.y})。クリックで貼り付け`);
+    };
+    box.appendChild(el);
+  });
+  status(`${res.candidates.length} 通りの配置ができました（面積の小さい順、同じなら置く数の少ない順）。クリックで下見できます`);
 }
 
 /** 見本の盤面を開く（今の盤面と入れ替わる）。中身は普通のセーブデータ。 */

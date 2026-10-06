@@ -20,6 +20,7 @@ import { Engine } from './worker/engine.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
 import { stackLimit } from './core/inventory.js';
 import { toggleLever } from './core/signal.js';
+import { generateCircuits } from './core/circuitgen.js';
 
 const results = [];
 function test(name, fn) {
@@ -1432,6 +1433,41 @@ test('簡易ドリル: 採掘機の半分の速さ（4秒に1個）で掘る', (
   for (let i = 0; i < 8; i++) sim.stepSecond();
   eq(sim.contentsAt(2, 1).ground, [{ item: 'iron-ore', count: 2 }]);
   eq(sim.contentsAt(2, 2).ground, [{ item: 'iron-ore', count: 4 }]);
+});
+test('回路の自動生成: 条件どおりに動く配置だけを、面積の小さい順・同じなら数の少ない順に並べる', () => {
+  const cases = [
+    [1, [true, false]],                               // A でない
+    [2, [false, false, false, true]],                 // A かつ B
+    [2, [false, true, true, false]],                  // どちらか一方だけ
+    [2, [false, true, true, true]],                   // A または B
+    [3, [false, false, false, true, false, true, true, false]],   // ちょうど2つ
+  ];
+  for (const [n, table] of cases) {
+    const res = generateCircuits(reg, n, table);
+    ok(res.candidates.length > 0, `${table.map(Number).join('')} の回路ができない`);
+    for (let i = 1; i < res.candidates.length; i++) {
+      const a = res.candidates[i - 1], b = res.candidates[i];
+      ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
+    }
+    const c = res.candidates[0];
+    const levers = c.blueprint.buildings.filter(b => b.type === 'lever');
+    eq(levers.length, n);
+    // 設計図を盤面に貼って、全部の組み合わせを確かめ直す
+    const w = new World({ width: c.width + 2, height: c.height + 2 });
+    pasteBlueprint(w, reg, c.blueprint, 1, 1);
+    const sim = new Sim(w, reg);
+    const on = c.input.map(() => false);
+    for (let r = 0; r < 1 << n; r++) {
+      c.input.forEach((p, i) => { const want = ((r >> (n - 1 - i)) & 1) === 1; if (on[i] !== want) { toggleLever(sim, p.x + 1, p.y + 1); on[i] = want; } });
+      sim.sync();
+      eq((sim.power.get(key(c.output.x + 1, c.output.y + 1)) || 0) >= 1, table[r], `${table.map(Number).join('')} の ${r} 行目`);
+    }
+  }
+  eq(generateCircuits(reg, 2, [false, false, false, false]).candidates, [], 'いつも出さない回路ができた');
+});
+test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ（入力2つ＋発電機）で組む', () => {
+  const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
+  eq(c.blueprint.buildings.filter(b => b.type === 'logic-circuit').length, 1);
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {

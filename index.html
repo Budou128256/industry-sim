@@ -66,6 +66,12 @@
   .modal .btns{display:flex;justify-content:flex-end;gap:8px}
   .modal .yes{border-color:#d4b13f}
   .modal .yes.danger{border-color:#f87171;color:#fecaca}
+    .cg { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; font-size: 12px; }
+    .cg table { border-collapse: collapse; }
+    .cg td, .cg th { padding: 1px 6px; text-align: center; border-bottom: 1px solid #1f2937; }
+    .cg th { color: #94a3b8; font-weight: 600; }
+    .cg .cand { text-align: left; }
+    .cg .cand.on { outline: 2px solid #38bdf8; }
 </style>
 </head>
 <body>
@@ -102,6 +108,15 @@
     <div id="bpList"></div>
     <div class="group">見本（動きの確認用）</div>
     <div id="exList"></div>
+    <div class="group">回路の自動生成</div>
+    <div class="cg">
+      <label>入力（レバー）の数 <select id="cgN"><option>1</option><option selected>2</option><option>3</option></select></label>
+      <div class="sub">電気を出したい組み合わせに印を付ける</div>
+      <table id="cgTable"></table>
+      <button id="btnGen" title="条件どおりに動く回路を型ごとに作り、シミュレーションで確かめて、面積の小さい順に並べる">回路を作る</button>
+      <div id="cgText" class="sub"></div>
+      <div id="cgList"></div>
+    </div>
     <div class="group">画面</div>
     <div class="selbtns">
       <button id="btnFit" title="F / Home">全体を表示 (F)</button>
