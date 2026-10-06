@@ -13,6 +13,7 @@ import { Sim, TICK_HZ } from './core/sim.js';
 import { buildBeltLines } from './core/belt.js';
 import { makeSnapshot } from './core/snapshot.js';
 import { ViewSim, ViewWorld } from './render/view.js';
+import { wireColors } from './render/renderer.js';
 import { Engine } from './worker/engine.js';
 import { loadSave, makeSave } from './core/save.js';
 
@@ -781,6 +782,18 @@ test('エンジン: 命令で置く・回す・撤去・進めるができ、画
   eng.handle({ id: 10, op: 'clear' });
   eng.handle({ op: 'ack' });
   eq(sent.filter(m => m.type === 'view').pop().snap.count, 0);
+});
+
+test('電線の色: 届いていないと灰色、強いほど明るい', () => {
+  const lum = c => { const n = parseInt(c.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
+  eq(wireColors(0, 24).line, '#4b5563');
+  eq(wireColors(24, 24).line, '#facc15');
+  let last = -1;
+  for (let lv = 1; lv <= 24; lv++) {
+    const l = lum(wireColors(lv, 24).line);
+    ok(l > last, `強さ ${lv} が ${lv - 1} より明るくない`);
+    last = l;
+  }
 });
 
 /* ---- 保存・読込（Phase 6） ---- */
