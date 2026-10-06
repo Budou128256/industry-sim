@@ -17,6 +17,7 @@
 
 import { DELTA, DIRS, inBounds } from './grid.js';
 import { pileMerge, pilePush } from './inventory.js';
+import { splitterAccepts, stepSplitters } from './splitter.js';
 
 /** ベルトの定義（data の belt）。ベルトでなければ null。 */
 export function beltDef(registry, building) {
@@ -129,7 +130,7 @@ export function stepBelts(sim) {
     // 送れないとき（盤面の外 / onBlocked が stop）は先頭に残り、後ろから来た物もそこへ積み重なる
     if (!inBounds(out.x, out.y, world.width, world.height)) {
       // 送らない
-    } else if (target && beltDef(registry, target)) {
+    } else if (target && (beltDef(registry, target) || splitterAccepts(registry, target, head.x, head.y))) {
       incoming.push([target.id, lists[lists.length - 1].splice(0)]);
     } else if (def.onBlocked !== 'stop') {
       for (const st of lists[lists.length - 1].splice(0)) {
@@ -141,7 +142,10 @@ export function stepBelts(sim) {
     for (let i = lists.length - 1; i > 0; i--) lists[i].push(...lists[i - 1].splice(0));
   }
 
-  // 別の線（合流先・違う種類のベルト）へ渡す。今tickはもう動かない
+  // スプリッター（Phase 7）。出す物も incoming に入れるので、今tickに2マス進むことはない
+  if (sim.splitState.size) stepSplitters(sim, incoming);
+
+  // 別の線（合流先・違う種類のベルト・スプリッター）へ渡す。今tickはもう動かない
   for (const [id, stacks] of incoming) {
     const dst = sim.belts.get(id);
     for (const st of stacks) pilePush(dst, st.item, st.count, sim.limit(st.item));

@@ -1,0 +1,17 @@
+{
+  "id": "splitter",
+  "name": "スプリッター(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#8fa3bf",
+  "directional": true,
+  "tags": [
+    "logistics"
+  ],
+  "note": "横から入ったスタックを半分ずつ正面と背面へ送る。半端な数は多い方を背面・正面へ交互に（最初は背面）。正面・背面の黒い点が出口",
+  "splitter": {
+    "tilesPerSecond": 1
+  }
+}

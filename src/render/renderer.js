@@ -20,6 +20,11 @@ export class Renderer {
     this.hover = null;              // { x, y }
     this.ghost = null;              // { cells, ok, def, dir }
     this.showPower = true;          // 電気の届く範囲を塗るか
+    /** 一番強い電源の強さ（電線の明るさ・塗りの濃さの基準）。data の power.source から */
+    this.maxPower = 1;
+    for (const b of registry.buildings.values()) {
+      if (b.power && b.power.source > this.maxPower) this.maxPower = b.power.source;
+    }
   }
 
   /** 画面の座標 → マスの座標。 */
@@ -114,7 +119,7 @@ export class Renderer {
           const lv = sim.power.get(key(x, y));
           if (!(lv >= 1)) continue;
           const { px, py } = this.toScreen(x, y);
-          ctx.globalAlpha = 0.06 + 0.12 * Math.min(1, lv / 24);
+          ctx.globalAlpha = 0.06 + 0.12 * Math.min(1, lv / this.maxPower);
           ctx.fillRect(px, py, t, t);
         }
       }
@@ -123,7 +128,7 @@ export class Renderer {
 
     // 床の層（電線）を先に、その上に設置物
     const shown = world.buildingsIn(x0, y0, x1, y1);
-    for (const bld of shown) if (bld.layer === 'floor') this.drawWire(world, bld);
+    for (const bld of shown) if (bld.layer === 'floor') this.drawWire(world, bld, sim);
     for (const bld of shown) {
       if (bld.layer !== 'floor') this.drawBuilding(bld, rotatedSize(bld.size, bld.dir), sim);
     }
@@ -134,12 +139,18 @@ export class Renderer {
     if (this.hover) this.drawHover(this.hover);
   }
 
-  /** 電線: 隣の電線へ向かって線を引く。 */
-  drawWire(world, bld) {
+  /**
+   * 電線: 隣の電線へ向かって線を引く。
+   * 明るさはそのマスの電気の強さで変わる（Core Keeper と同じく、発電機から遠いほど暗い）。
+   * 電気が届いていなければ暗い灰色。
+   */
+  drawWire(world, bld, sim) {
     const ctx = this.ctx, t = this.tile;
     const { px, py } = this.toScreen(bld.x, bld.y);
     const cx = px + t / 2, cy = py + t / 2;
-    ctx.strokeStyle = '#facc15';
+    const lv = (sim && sim.power.get(key(bld.x, bld.y))) || 0;
+    const { line, dot } = wireColors(lv, this.maxPower);
+    ctx.strokeStyle = line;
     ctx.lineWidth = Math.max(2, t * 0.1);
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -152,7 +163,7 @@ export class Renderer {
     }
     if (!any) { ctx.moveTo(cx - t * 0.25, cy); ctx.lineTo(cx + t * 0.25, cy); }
     ctx.stroke();
-    ctx.fillStyle = '#fde047';
+    ctx.fillStyle = dot;
     ctx.beginPath(); ctx.arc(cx, cy, t * 0.1, 0, 7); ctx.fill();
   }
 
@@ -176,6 +187,12 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(px + w / 2 + d.x * w * 0.33, py + h / 2 + d.y * h * 0.33, Math.max(2, t * 0.09), 0, 7);
       ctx.fill();
+      // スプリッターは背面にも出すので、背面にも印（横から入る）
+      if (def.splitter) {
+        ctx.beginPath();
+        ctx.arc(px + w / 2 - d.x * w * 0.33, py + h / 2 - d.y * h * 0.33, Math.max(2, t * 0.09), 0, 7);
+        ctx.fill();
+      }
     }
     // 名前の頭文字（アイコンは後の段階で）
     if (t >= 18 && def.name) {
@@ -319,4 +336,19 @@ export class Renderer {
   setGhost(def, x, y, dir, ok) {
     this.ghost = def ? { cells: footprint(x, y, def.size, dir), ok, def, dir } : null;
   }
+}
+
+/**
+ * 電線の色。強さ 0（届いていない）は暗い灰色、1 は暗い黄色、最大で明るい黄色。
+ * 間は強さに比例して混ぜる。テストから呼べるように外に出してある。
+ */
+export function wireColors(level, max) {
+  if (!(level >= 1)) return { line: '#4b5563', dot: '#6b7280' };
+  const f = Math.min(1, (level - 1) / Math.max(1, max - 1));
+  return { line: mix([0x6b, 0x5a, 0x12], [0xfa, 0xcc, 0x15], f), dot: mix([0x7c, 0x6a, 0x1c], [0xfe, 0xf0, 0x8a], f) };
+}
+
+function mix(a, b, f) {
+  const c = a.map((v, i) => Math.round(v + (b[i] - v) * f));
+  return `#${c.map(v => v.toString(16).padStart(2, '0')).join('')}`;
 }

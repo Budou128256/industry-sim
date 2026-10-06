@@ -6,7 +6,7 @@
  * 1 tick の順番: 加工機 → ベルト → 採掘機 → アーム（採掘機以外は sim.js と同じ順）。
  *
  * 中身の持ち方:
- *   belts      建物 id -> スタックの列（ベルトの上）
+ *   belts      建物 id -> スタックの列（ベルトの上。スプリッターの中もここ）
  *   containers 建物 id -> { slots }（保管箱）
  *   machines   建物 id -> { input, output, progress, state }（加工機）
  *   ground     マスの鍵 -> スタックの列（床。同じ種類は1つの山にまとまる）
@@ -22,6 +22,7 @@ import { beltDef, buildBeltLines, sortBeltLines, stepBelts } from './belt.js';
 import { inserterDef, stepInserters } from './inserter.js';
 import { machinePut, makeMachine, stepMachines } from './machine.js';
 import { makeMiner, stepMiners } from './miner.js';
+import { makeSplitterState } from './splitter.js';
 import { computePower, isPowered, updatePower } from './power.js';
 import { containerAdd, containerTotal, makeContainer, pileMerge, pilePush, pileTotal, stackLimit } from './inventory.js';
 
@@ -40,6 +41,7 @@ export class Sim {
     this.containers = new Map();
     this.machines = new Map();
     this.miners = new Map();     // 建物 id -> { progress, cursor, state }
+    this.splitState = new Map(); // スプリッターの id -> { next }（中身は belts に持つ。Phase 7）
     this.produced = {};        // 作った数の累計（item -> 個数）
     this.ground = new Map();
     this.beltLines = [];
@@ -198,7 +200,8 @@ export class Sim {
         continue;
       }
       const def = this.registry.building(b.type) || {};
-      if (def.belt) { this.belts.set(b.id, []); newBelts.push(b); }
+      if (def.belt || def.splitter) { this.belts.set(b.id, []); newBelts.push(b); }
+      if (def.splitter) this.splitState.set(b.id, makeSplitterState());
       if (def.container) this.containers.set(b.id, makeContainer(def.container.slots || 1));
       if (def.machine) this.machines.set(b.id, makeMachine());
       if (def.miner) this.miners.set(b.id, makeMiner());
@@ -216,6 +219,7 @@ export class Sim {
       this.containers.delete(r.id);
       this.machines.delete(r.id);
       this.miners.delete(r.id);
+      this.splitState.delete(r.id);
     }
     // 床に落ちている物の上にベルトを敷いたら、その物はベルトに載って流れる。
     // 撤去で落ちた物も拾えるよう、落とした後に拾う
@@ -232,7 +236,7 @@ export class Sim {
   }
 
   move(fromId, toId) {
-    for (const m of [this.belts, this.containers, this.machines, this.miners]) {
+    for (const m of [this.belts, this.containers, this.machines, this.miners, this.splitState]) {
       if (m.has(fromId)) { m.set(toId, m.get(fromId)); m.delete(fromId); }
     }
   }
@@ -318,6 +322,8 @@ export class Sim {
                              output: m.output && { ...m.output }, progress: m.progress, state: m.state })),
       miners: [...this.miners].filter(([, m]) => m.progress || m.cursor)
         .map(([id, m]) => ({ ...at(id), progress: m.progress, cursor: m.cursor })),
+      splitters: [...this.splitState].filter(([, s]) => s.next !== 'back')
+        .map(([id, s]) => ({ ...at(id), next: s.next })),
       produced: { ...this.produced },
       ground: [...this.ground].filter(([, l]) => l.length).map(([k, l]) => {
         const { x, y } = parseKey(k);
@@ -352,6 +358,10 @@ export class Sim {
       const b = world.at(e.x, e.y);
       if (!b || !sim.miners.has(b.id)) continue;
       Object.assign(sim.miners.get(b.id), { progress: e.progress || 0, cursor: e.cursor || 0 });
+    }
+    for (const e of data.splitters || []) {
+      const b = world.at(e.x, e.y);
+      if (b && sim.splitState.has(b.id) && (e.next === 'back' || e.next === 'front')) sim.splitState.get(b.id).next = e.next;
     }
     sim.produced = { ...(data.produced || {}) };
     for (const e of data.ground || []) sim.ground.set(key(e.x, e.y), e.stacks.map(s => ({ ...s })));
