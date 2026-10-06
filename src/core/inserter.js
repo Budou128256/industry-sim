@@ -69,7 +69,7 @@ function takePart(list, i, max) {
 }
 
 /** そのマスへ置く。入りきらない分はそのマスの床へ。床に落ちた数を返す。 */
-function deliverTo(sim, cell, item, count) {
+export function deliverTo(sim, cell, item, count) {
   const limit = sim.limit(item);
   const b = sim.world.at(cell.x, cell.y);
   let left = count;

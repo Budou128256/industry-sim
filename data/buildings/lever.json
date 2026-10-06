@@ -1,0 +1,16 @@
+{
+  "id": "lever",
+  "name": "レバー(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#8b8f5a",
+  "directional": false,
+  "tags": [
+    "power"
+  ],
+  "note": "入っているときだけ電気を通す。置いた直後は切れている。何も選んでいないときにクリックすると入り切りする",
+  "signal": { "type": "lever" },
+  "power": {}
+}

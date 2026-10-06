@@ -6,7 +6,8 @@
 
 import { DELTA, footprint, key, rotatedSize } from '../core/grid.js';
 import { minerOutput, minerTargets } from '../core/miner.js';
-import { craftTicks, machineDef, machineOutputCell, recipeFor } from '../core/machine.js';
+import { collectorArea, collectorDef, collectorOutput } from '../core/collector.js';
+import { cycleTicks, machineDef, machineOutputCell } from '../core/machine.js';
 import { TICK_HZ } from '../core/sim.js';
 
 export class Renderer {
@@ -249,6 +250,8 @@ export class Renderer {
       const m = sim.machines.get(b.id);
       if (m) this.drawMachine(b, m);
       if (sim.miners.has(b.id)) this.drawMinerOutput(b);
+      if (sim.collectors && sim.collectors.has(b.id)) this.drawCollectorArea(b);
+      if (sim.signals && sim.signals.has(b.id)) this.drawSignal(b, sim.signals.get(b.id));
       if (m && (machineDef(this.registry, b) || {}).outputFront) this.markCell(machineOutputCell(b), 'rgba(250,204,21,0.75)');
     }
     if (!sim.ground.size) return;
@@ -284,8 +287,8 @@ export class Renderer {
     const w = size.width * t, h = size.height * t;
     if (m.input) this.drawStack(b.x, b.y + size.height - 1, [m.input], 'ground-like');
     if (m.output) this.drawStack(b.x + size.width - 1, b.y + size.height - 1, [m.output], 'container');
-    const recipe = m.input && recipeFor(this.registry, b.type, m.input.item);
-    const pct = recipe ? m.progress / craftTicks(recipe, TICK_HZ) : 0;
+    const ticks = cycleTicks(this.registry, b, m, TICK_HZ);
+    const pct = ticks ? m.progress / ticks : 0;
     ctx.fillStyle = '#0b0e15';
     ctx.fillRect(px + 4, py + h - 7, w - 8, 4);
     ctx.fillStyle = m.state === '出力が満杯' ? '#f87171' : '#4ade80';
@@ -296,6 +299,32 @@ export class Renderer {
   drawMinerOutput(b) {
     for (const c of minerTargets(b)) this.markCell(c, 'rgba(56,189,248,0.75)');
     this.markCell(minerOutput(b), 'rgba(250,204,21,0.75)');
+  }
+
+  /** レバー・回路の入り切り（左上の丸。入っていれば緑、切れていれば灰色）。 */
+  drawSignal(b, st) {
+    const ctx = this.ctx, t = this.tile;
+    const { px, py } = this.toScreen(b.x, b.y);
+    ctx.fillStyle = st.on ? '#4ade80' : '#475569';
+    ctx.strokeStyle = '#0b0e15';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(px + t * 0.22, py + t * 0.22, Math.max(2.5, t * 0.11), 0, 7);
+    ctx.fill(); ctx.stroke();
+  }
+
+  /** 回収機の集める範囲（水色の点線の大きな枠）と移す先のマス（黄色の点線）。 */
+  drawCollectorArea(b) {
+    const area = collectorArea(b, (collectorDef(this.registry, b) || {}).range || 5);
+    const xs = area.map(c => c.x), ys = area.map(c => c.y);
+    const a = this.toScreen(Math.min(...xs), Math.min(...ys)), t = this.tile;
+    const ctx = this.ctx;
+    ctx.strokeStyle = 'rgba(56,189,248,0.6)';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(a.px + 2, a.py + 2, (Math.max(...xs) - Math.min(...xs) + 1) * t - 4, (Math.max(...ys) - Math.min(...ys) + 1) * t - 4);
+    ctx.setLineDash([]);
+    this.markCell(collectorOutput(b), 'rgba(250,204,21,0.75)');
   }
 
   /** マスを点線の枠で囲む（採掘機の掘る所・出し先、送り出し加工機の出し先）。 */

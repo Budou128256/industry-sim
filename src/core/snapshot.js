@@ -21,7 +21,7 @@ export function makeSnapshot(world, sim, rect) {
     width: world.width, height: world.height,
     rect: { x0, y0, x1, y1 },
     buildings: [], resources: [], power: [], unpowered: [], busy: [],
-    belts: [], containers: [], machines: [], miners: [], ground: [],
+    belts: [], containers: [], machines: [], miners: [], collectors: [], signals: [], ground: [],
   };
   if (x1 < x0 || y1 < y0) return snap;
   for (const b of world.buildingsIn(x0, y0, x1, y1)) {
@@ -36,6 +36,8 @@ export function makeSnapshot(world, sim, rect) {
                                   progress: m.progress, state: m.state }]);
     }
     if (sim.miners.has(b.id)) snap.miners.push([b.id, { ...sim.miners.get(b.id) }]);
+    if (sim.collectors.has(b.id)) snap.collectors.push([b.id, { ...sim.collectors.get(b.id) }]);
+    if (sim.signals.has(b.id)) snap.signals.push([b.id, { on: sim.signals.get(b.id).on }]);
   }
   world.resources.forEachIn(x0, y0, x1, y1, (x, y, item) => snap.resources.push([x, y, item]));
   for (let y = y0; y <= y1; y++) {

@@ -1,0 +1,24 @@
+{
+  "id": "incinerator",
+  "name": "焼却炉(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#7a3b3b",
+  "directional": false,
+  "tags": [
+    "production"
+  ],
+  "note": "入れた物を消す（Core Keeper の Incinerator）。どんな物でも入る。炉と同じく入力1スタックで、10秒に1個消す。材料はアームで入れる",
+  "machine": {
+    "incinerate": {
+      "craftTime": 10,
+      "amount": 1
+    }
+  },
+  "power": {
+    "needs": true,
+    "conducts": true
+  }
+}

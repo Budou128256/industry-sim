@@ -1,0 +1,16 @@
+{
+  "id": "pressure-plate",
+  "name": "感圧板(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#7f8a99",
+  "directional": false,
+  "tags": [
+    "power"
+  ],
+  "note": "そのマスの床に物があるあいだ、弱い電気（強さ5）を出す。Core Keeper では人が踏むと動くが、ここには人がいないので床の物で代わりにした",
+  "signal": { "type": "plate", "source": 5 },
+  "power": {}
+}

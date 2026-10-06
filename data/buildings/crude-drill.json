@@ -1,0 +1,22 @@
+{
+  "id": "crude-drill",
+  "name": "簡易ドリル(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#7d8a9c",
+  "directional": true,
+  "tags": [
+    "production"
+  ],
+  "note": "採掘機の下位版（Core Keeper の Crude Drill）。掘る速さは採掘機の半分で、4秒に1個。資料では簡易ドリルが毎秒3ダメージ、ドリルが2秒に12ダメージ（毎秒6）なので、速さを半分にした",
+  "miner": {
+    "periodSeconds": 4,
+    "amount": 1
+  },
+  "power": {
+    "needs": true,
+    "conducts": true
+  }
+}

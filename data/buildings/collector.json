@@ -1,0 +1,22 @@
+{
+  "id": "collector",
+  "name": "回収機(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#5f8f7a",
+  "directional": true,
+  "tags": [
+    "logistics"
+  ],
+  "note": "正面の5x5マスの床の物を、1秒ごとにまとめて背面のマスへ移す（Core Keeper の Item Collector）。ベルト・箱の中の物は取らない",
+  "collector": {
+    "periodSeconds": 1,
+    "range": 5
+  },
+  "power": {
+    "needs": true,
+    "conducts": true
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "logic-circuit",
+  "name": "論理回路(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#4f7a5a",
+  "directional": true,
+  "tags": [
+    "power"
+  ],
+  "note": "左・右・背面の3つの入力のうち、ちょうど2つに電気が来ているとき、正面へ電気を出す",
+  "signal": { "type": "logic" },
+  "power": {}
+}

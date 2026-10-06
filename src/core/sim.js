@@ -3,7 +3,7 @@
  * **描画も DOM も知らない。** あとで Web Worker へ移せるよう、ブラウザの API を使わない。
  *
  * 時間: 1秒 = 20 tick（corekeeper_layout/static/sim.js と同じ。出典は Core Keeper 日本語 Wiki の回路使用例）。
- * 1 tick の順番: 加工機 → ベルト → 採掘機 → 送り出し加工機の送り出し → アーム（採掘機以外は sim.js と同じ順）。
+ * 1 tick の順番: 加工機 → ベルト → 採掘機 → 送り出し加工機の送り出し → 回収機 → アーム（採掘機以外は sim.js と同じ順）。
  *
  * 中身の持ち方:
  *   belts      建物 id -> スタックの列（ベルトの上。スプリッターの中もここ）
@@ -22,6 +22,8 @@ import { beltDef, buildBeltLines, sortBeltLines, stepBelts } from './belt.js';
 import { inserterDef, stepInserters } from './inserter.js';
 import { machinePut, makeMachine, stepMachineOutputs, stepMachines } from './machine.js';
 import { makeMiner, stepMiners } from './miner.js';
+import { makeCollector, stepCollectors } from './collector.js';
+import { computeSignals, makeSignal, recordDelays } from './signal.js';
 import { makeSplitterState } from './splitter.js';
 import { computePower, isPowered, updatePower } from './power.js';
 import { containerAdd, containerTotal, makeContainer, pileMerge, pilePush, pileTotal, stackLimit } from './inventory.js';
@@ -41,9 +43,13 @@ export class Sim {
     this.containers = new Map();
     this.machines = new Map();
     this.miners = new Map();     // 建物 id -> { progress, cursor, state }
+    this.collectors = new Map(); // 回収機の id -> { progress, state }
+    this.signals = new Map();    // レバー・感圧板・回路の id -> { on, level, history }（signal.js）
+    this.signalSig = null;       // 回路の計算をし直すかの目印（signal.js）
     this.splitState = new Map(); // スプリッターの id -> { next }（中身は belts に持つ。Phase 7）
     this.moved = new Map();      // まとめて移動した建物の 元の id -> 新しい id（次の sync で中身を引き継ぐ）
     this.produced = {};        // 作った数の累計（item -> 個数）
+    this.destroyed = {};       // 焼却炉で消した数の累計（item -> 個数）
     this.ground = new Map();
     this.beltLines = [];
     this.lineOf = new Map();     // ベルトの id -> そのベルトが入っている線
@@ -58,6 +64,7 @@ export class Sim {
   }
 
   cellKey(x, y) { return key(x, y); }
+  signalType(id) { const b = this.world.buildings.get(id); return b && ((this.registry.building(b.type) || {}).signal || {}).type; }
   limit(item) { return stackLimit(this.registry, item); }
 
   /** 床のスタックの列。create が真なら無ければ作る。 */
@@ -79,11 +86,19 @@ export class Sim {
    */
   sync() {
     const world = this.world;
-    if (world.revision === this.rev) return;
-    const changes = this.rev < 0 ? null : world.changesSince(this.rev);
-    this.rev = world.revision;
-    if (changes) this.syncChanges(changes);
-    else this.syncAll();
+    if (world.revision !== this.rev) {
+      const changes = this.rev < 0 ? null : world.changesSince(this.rev);
+      this.rev = world.revision;
+      if (changes) this.syncChanges(changes);
+      else this.syncAll();
+    }
+    if (this.signals.size) computeSignals(this);
+    else if (this.signalSig) {             // 回路が無くなった: 普通の計算に戻す
+      this.signalSig = null;
+      this.power = computePower(this.world, this.registry);
+      this.unpowered = new Set();
+      this.world.forEach(b => { if (!isPowered(this.power, this.registry, b)) this.unpowered.add(b.id); });
+    }
   }
 
   /** 盤面全体を見て追いつく。 */
@@ -218,6 +233,8 @@ export class Sim {
       if (def.container) this.containers.set(b.id, makeContainer(def.container.slots || 1));
       if (def.machine) this.machines.set(b.id, makeMachine());
       if (def.miner) this.miners.set(b.id, makeMiner());
+      if (def.collector) this.collectors.set(b.id, makeCollector());
+      if (def.signal) this.signals.set(b.id, makeSignal(def.signal));
     }
     for (const r of removed) {
       if (this.belts.has(r.id)) this.dropToGround(r.x, r.y, this.belts.get(r.id));
@@ -232,6 +249,8 @@ export class Sim {
       this.containers.delete(r.id);
       this.machines.delete(r.id);
       this.miners.delete(r.id);
+      this.collectors.delete(r.id);
+      this.signals.delete(r.id);
       this.splitState.delete(r.id);
     }
     // 床に落ちている物の上にベルトを敷いたら、その物はベルトに載って流れる。
@@ -249,7 +268,7 @@ export class Sim {
   }
 
   move(fromId, toId) {
-    for (const m of [this.belts, this.containers, this.machines, this.miners, this.splitState]) {
+    for (const m of [this.belts, this.containers, this.machines, this.miners, this.collectors, this.signals, this.splitState]) {
       if (m.has(fromId)) { m.set(toId, m.get(fromId)); m.delete(fromId); }
     }
   }
@@ -264,7 +283,9 @@ export class Sim {
     stepBelts(this);
     stepMiners(this);      // ベルトの後。出したばかりの物が同じ tick に1マス進まないように
     stepMachineOutputs(this);   // 送り出し加工機も同じ理由でベルトの後
+    stepCollectors(this);       // 回収機も同じ理由でベルトの後
     stepInserters(this);
+    if (this.signals.size) recordDelays(this);
     return this.tick;
   }
 
@@ -305,6 +326,8 @@ export class Sim {
     if (b && this.containers.has(b.id)) out.container = this.containers.get(b.id);
     if (b && this.machines.has(b.id)) out.machine = this.machines.get(b.id);
     if (b && this.miners.has(b.id)) out.miner = this.miners.get(b.id);
+    if (b && this.collectors.has(b.id)) out.collector = this.collectors.get(b.id);
+    if (b && this.signals.has(b.id)) out.signal = this.signals.get(b.id);
     const res = this.world.resourceAt(x, y);
     if (res) out.resource = res;
     return out;
@@ -317,7 +340,7 @@ export class Sim {
     for (const m of this.machines.values()) inMachines += pileTotal([m.input, m.output].filter(Boolean));
     for (const l of this.ground.values()) onGround += pileTotal(l);
     return { tick: this.tick, seconds: this.seconds, onBelts, inContainers, inMachines, onGround,
-             produced: { ...this.produced } };
+             produced: { ...this.produced }, destroyed: { ...this.destroyed } };
   }
 
   /** 保存用。建物の id は保存しないので、中身は座標で持つ。 */
@@ -336,9 +359,11 @@ export class Sim {
                              output: m.output && { ...m.output }, progress: m.progress, state: m.state })),
       miners: [...this.miners].filter(([, m]) => m.progress || m.cursor)
         .map(([id, m]) => ({ ...at(id), progress: m.progress, cursor: m.cursor })),
+      levers: [...this.signals].filter(([id, st]) => st.on && this.signalType(id) === 'lever').map(([id]) => at(id)),
       splitters: [...this.splitState].filter(([, s]) => s.next !== 'back')
         .map(([id, s]) => ({ ...at(id), next: s.next })),
       produced: { ...this.produced },
+      destroyed: { ...this.destroyed },
       ground: [...this.ground].filter(([, l]) => l.length).map(([k, l]) => {
         const { x, y } = parseKey(k);
         return { x, y, stacks: copy(l) };
@@ -377,7 +402,14 @@ export class Sim {
       const b = world.at(e.x, e.y);
       if (b && sim.splitState.has(b.id) && (e.next === 'back' || e.next === 'front')) sim.splitState.get(b.id).next = e.next;
     }
+    for (const e of data.levers || []) {
+      const b = world.at(e.x, e.y);
+      const st = b && sim.signals.get(b.id);
+      if (st && sim.signalType(b.id) === 'lever') st.on = true;
+    }
+    sim.signalSig = null;
     sim.produced = { ...(data.produced || {}) };
+    sim.destroyed = { ...(data.destroyed || {}) };
     for (const e of data.ground || []) sim.ground.set(key(e.x, e.y), e.stacks.map(s => ({ ...s })));
     // 前の版で保存した、ベルトの下に残った床の物もベルトに載せる
     world.forEach(b => { if (sim.belts.has(b.id)) sim.pickUpGround(b); });

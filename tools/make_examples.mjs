@@ -17,6 +17,7 @@ import { World } from '../src/core/world.js';
 import { Sim } from '../src/core/sim.js';
 import { place } from '../src/core/placement.js';
 import { makeSave } from '../src/core/save.js';
+import { toggleLever } from '../src/core/signal.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = p => JSON.parse(fs.readFileSync(path.join(root, p), 'utf8'));
@@ -37,6 +38,7 @@ function loadRegistry() {
 function board(reg, width, height) {
   const world = new World({ width, height });
   const items = [];
+  const levers = [];
   const api = {
     world,
     put(type, x, y, dir = 'N') {
@@ -52,9 +54,12 @@ function board(reg, width, height) {
     },
     ore(item, ...cells) { for (const [x, y] of cells) world.setResource(x, y, item); return api; },
     items(x, y, item, count) { items.push({ x, y, item, count }); return api; },
+    /** レバーを入れた状態で保存する。 */
+    leverOn(x, y) { levers.push({ x, y }); return api; },
     sim() {
       const sim = new Sim(world, reg);
       for (const it of items) sim.addItems(it.x, it.y, it.item, it.count);
+      for (const l of levers) if (toggleLever(sim, l.x, l.y) === null) throw new Error(`(${l.x}, ${l.y}) はレバーでない`);
       return sim;
     },
   };
@@ -132,6 +137,68 @@ const EXAMPLES = [
       b.put('inserter', 9, 5, 'W').put('furnace', 10, 5).put('inserter', 11, 5, 'W');
       b.row('belt', 12, 13, 5, 'E').put('splitter', 14, 5, 'N');
       b.col('belt', 14, 4, 3, 'N').col('belt', 14, 6, 7, 'S');      // 上は (14,2)、下は (14,8) に落ちる
+      return b;
+    },
+  },
+  {
+    id: 'table-saw',
+    name: '5. 製材機',
+    note: '箱の木材をアームが製材機へ入れ、できた板を別のアームが右の箱へ移す。製材機は電気が要る（電線から）。'
+      + '下の段はアームと製材機に電気が届かず止まっている（赤い ×）。加工は1枚10秒',
+    build(reg) {
+      const b = board(reg, 14, 10);
+      b.put('generator', 1, 4).row('wire', 2, 7, 4);
+      b.put('chest', 3, 3).put('inserter', 4, 3, 'W').put('table-saw', 5, 3).put('inserter', 6, 3, 'W').put('chest', 7, 3);
+      b.items(3, 3, 'wood', 30);
+      // 電気の届かない製材機（電線とつながっていない）
+      b.put('chest', 3, 7).put('inserter', 4, 7, 'W').put('table-saw', 5, 7);
+      b.items(3, 7, 'wood', 10);
+      return b;
+    },
+  },
+  {
+    id: 'new-machines',
+    name: '6. 新しい機械まとめ',
+    note: '上の段（左から）: 製材機（木材→板）、焼却炉（石炭を10秒に1個消す）、粉砕機2台（スクラップ用アイテムA→3種類・B→2種類を下へ送り出す）、'
+      + '回収機（下向き。点線の5x5の床の物を、1秒ごとに背面の箱へ。点線の外の石炭は残る）、簡易ドリルと採掘機（簡易ドリルは半分の速さ）。'
+      + '下の段の回路は、電気が届くとアーム（電気の印）の赤い × が消える。左上の丸が緑なら入っている。'
+      + 'レバーは何も選んでいないときにクリックで入り切り。左から: レバー1つ、交差回路（横だけ通り縦には漏れない）、'
+      + '論理回路（左・右・背面のレバーのうちちょうど2つ入ると上へ出す。最初は左と右が入っている）、'
+      + '遅延回路（レバーを入れて1秒後に右へ出る）、感圧板（アームが石炭を載せると電気を出す）',
+    build(reg) {
+      const b = board(reg, 34, 22);
+      // 電気の幹線（上）
+      b.put('generator', 1, 1).row('wire', 2, 30, 1).put('generator', 31, 1);   // 電気は24マスまでなので両端に発電機
+      // 製材機
+      b.put('chest', 2, 2).put('inserter', 3, 2, 'W').put('table-saw', 4, 2).put('inserter', 5, 2, 'W').put('chest', 6, 2);
+      b.items(2, 2, 'wood', 30);
+      // 焼却炉
+      b.put('chest', 8, 2).put('inserter', 9, 2, 'W').put('incinerator', 10, 2);
+      b.items(8, 2, 'coal', 20);
+      // 粉砕機: A はベルトで下へ（ベルトの先で床に落ちる）、B は正面の床へ
+      b.put('chest', 12, 2).put('inserter', 13, 2, 'W').put('shredder', 14, 2, 'S').col('belt', 14, 3, 4, 'S');
+      b.items(12, 2, 'scrap-a', 10);
+      b.put('chest', 16, 2).put('inserter', 17, 2, 'W').put('shredder', 18, 2, 'S');
+      b.items(16, 2, 'scrap-b', 10);
+      // 回収機（下向き）。背面の箱は電線の上に置く（電線は床の層）
+      b.put('collector', 22, 2, 'S').put('chest', 22, 1);
+      b.items(20, 4, 'iron-ore', 5).items(23, 6, 'coal', 3).items(24, 7, 'copper-ore', 2).items(22, 9, 'coal', 4);   // (22,9) は範囲の外
+      // 簡易ドリルと採掘機（左を掘り、右の床へ出す）
+      b.ore('iron-ore', [27, 2], [27, 3]);
+      b.put('crude-drill', 28, 2, 'W').put('miner', 28, 3, 'W');
+
+      // 回路（下の段）。アームは電気の印
+      b.put('generator', 1, 11).put('lever', 2, 11).row('wire', 3, 4, 11).put('inserter', 5, 11, 'E');
+      b.put('generator', 1, 14).row('wire', 2, 3, 14).put('cross-circuit', 4, 14).put('wire', 5, 14).put('inserter', 6, 14, 'E');
+      b.put('inserter', 4, 13, 'E').col('wire', 4, 15, 16).put('inserter', 4, 17, 'E');
+      b.put('logic-circuit', 15, 15, 'N').put('wire', 15, 14).put('inserter', 15, 13, 'E');
+      b.put('generator', 11, 15).put('lever', 12, 15).row('wire', 13, 14, 15).leverOn(12, 15);
+      b.put('generator', 19, 15).put('lever', 18, 15).row('wire', 16, 17, 15).leverOn(18, 15);
+      b.put('generator', 15, 19).put('lever', 15, 18).col('wire', 15, 16, 17);
+      b.put('generator', 22, 12).put('lever', 23, 12).put('wire', 24, 12).put('delay-circuit', 25, 12, 'E').put('wire', 26, 12).put('inserter', 27, 12, 'E');
+      b.put('chest', 22, 16).put('inserter', 23, 16, 'W').put('generator', 23, 17)
+        .put('pressure-plate', 24, 16).row('wire', 25, 26, 16).put('inserter', 27, 16, 'E');
+      b.items(22, 16, 'coal', 50);
       return b;
     },
   },

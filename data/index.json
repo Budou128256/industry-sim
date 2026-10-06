@@ -4,21 +4,39 @@
     "copper-ore",
     "coal",
     "iron-plate",
-    "copper-plate"
+    "copper-plate",
+    "wood",
+    "plank",
+    "scrap-a",
+    "scrap-b",
+    "scrap-part"
   ],
   "buildings": [
     "miner",
+    "crude-drill",
     "furnace",
     "processor",
+    "table-saw",
+    "incinerator",
+    "shredder",
     "belt",
     "splitter",
     "inserter",
+    "collector",
     "chest",
     "generator",
-    "wire"
+    "wire",
+    "lever",
+    "pressure-plate",
+    "logic-circuit",
+    "delay-circuit",
+    "cross-circuit"
   ],
   "recipes": [
     "iron-plate",
-    "copper-plate"
+    "copper-plate",
+    "plank",
+    "scrap-a",
+    "scrap-b"
   ]
 }
