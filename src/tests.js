@@ -1378,6 +1378,17 @@ test('レバー: 入っているときだけ電気を通す。置いた直後は
   eq(poweredAt(sim, 3, 1), false);
   eq(toggleLever(sim, 2, 1), null, '電線を入り切りできた');
 });
+test('レバー: 入っているあいだは発電機なしでも電源になる（強さ5: 隣が5、5マス先で届かない）', () => {
+  const w = new World({ width: 10, height: 3 });
+  sigBoard(w, [['lever', 0, 1], ['wire', 1, 1], ['wire', 2, 1], ['wire', 3, 1], ['miner', 4, 1, 'W'], ['wire', 5, 1], ['miner', 6, 1, 'W']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 4, 1), false, '切れているのに届いた');
+  toggleLever(sim, 0, 1);
+  sim.sync();
+  eq(sim.power.get(key(1, 1)), 5);
+  eq(poweredAt(sim, 4, 1), true, '4マス先に届かない');
+  eq(poweredAt(sim, 6, 1), false, '6マス先まで届いた');
+});
 test('交差回路: 縦と横がつながらず、来た向きのまままっすぐ通す', () => {
   const w = new World({ width: 9, height: 9 });
   sigBoard(w, [['generator', 1, 4], ['wire', 2, 4], ['wire', 3, 4], ['cross-circuit', 4, 4], ['wire', 5, 4], ['miner', 6, 4, 'W'],
@@ -1471,9 +1482,10 @@ test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ�
   eq(c.blueprint.buildings.filter(b => b.type === 'logic-circuit').length, 1);
 });
 test('回路の自動生成: 1か所でしか使わないレバーは回路の口へ直接置き、線を延ばさない', () => {
-  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機3つ・出力の電線1つ。左端にレバーを並べていた頃は 8×5=40 だった
+  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力の電線1つ。左端にレバーを並べていた頃は 8×5=40 だった
   const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
-  ok(c.area <= 16, `面積 ${c.area}`);
+  ok(c.area <= 9, `面積 ${c.area}`);
+  eq(c.blueprint.buildings.filter(b => b.type === 'generator').length, 1, 'レバーの隣に発電機がある');
   eq(c.blueprint.buildings.filter(b => b.type === 'wire').length, 1);
   const b = c.blueprint.buildings.find(x => x.x === c.output.x && x.y === c.output.y);
   eq(b && b.type, 'wire', '出力は回路の正面の電線');

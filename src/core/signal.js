@@ -1,9 +1,11 @@
 /* 電気の入り切りを組み合わせる部品（Core Keeper の論理回路など。ユーザーの依頼 2026-10-06）。
  *
  * 部品（data の signal.type）と、資料の記述（https://corekeeper.atma.gg/en/ の各ページ、2026-10-06 に確認）:
- *   lever   レバー。「can be used to toggle the flow of electricity」
- *           → **入っているときだけ電気を通す**。置いた直後は切れている。クリックで入り切り
- *             （資料には「v1.0.0.8 ではレバーだけで機械が動く」という注記もあるが、ここでは説明文どおり切り替えにした）
+ *   lever   レバー。「Generates a low amount of electricity that can be turned on and off」
+ *           「currently (v1.0.0.8) levers can power any electrical device, including drills」
+ *           → **入っているあいだ電源になる**（発電機は要らない。ユーザーの指摘 2026-10-07）。強さは signal.source
+ *             （資料に数が無いので、同じ「low amount」と書かれた感圧板と同じ 5 に仮に決めた）。
+ *             入っているときは電線と同じく電気も通す。置いた直後は切れている。クリックで入り切り
  *   plate   感圧板。「Generates a low amount of electricity」「stepped on by the player」
  *           → 人はいないので、**そのマスの床に物があるあいだ**電源になる。強さは signal.source（仮に 5）
  *   logic   論理回路。「Electricity can move through the circuit when it receives electricity on exactly 2 out of 3 inputs」
@@ -97,7 +99,10 @@ export function computeSignals(sim, force = false) {
       const k = key(c.x, c.y);
       if (s.type === 'cross') kind.set(k, 'x');
       else if (s.type === 'logic' || s.type === 'delay') kind.set(k, 'g');
-      else if (s.type === 'lever') kind.set(k, st && st.on ? 'c' : 'off');
+      else if (s.type === 'lever') {
+        kind.set(k, st && st.on ? 'c' : 'off');
+        if (st && st.on) starts.push({ x: c.x, y: c.y, level: (s.source || 5) + 1 });
+      }
       else if (s.type === 'plate') {
         kind.set(k, 'off');
         if (plateActive(sim, b)) starts.push({ x: c.x, y: c.y, level: (s.source || 5) + 1 });

@@ -362,7 +362,7 @@ class Layout {
 }
 
 /** 型 pattern で並べてつなぐ。できなければ null。 */
-function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = false, nearOut = true) {
+function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = false, nearOut = true, leverGen = false) {
   if (!root) return null;
   const always = root.kind === 'always';
   const { gates, out } = always ? { gates: [], out: 'out' } : netlist(n, root, boost);
@@ -380,7 +380,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
   const sources = {};               // net -> 出る口のマス {x, y}
   const addPin = (net, x, y) => { (pins[net] = pins[net] || []).push({ x, y }); L.set(x, y, { t: 'pin', n: net }); };
 
-  // 入力: 発電機 → レバー → 線（全部いつも出す回路なら、発電機だけ）
+  // 入力: レバー → 線（レバーは入っているあいだ自分が電源。全部いつも出す回路なら、発電機だけ）
   const inTop = Math.floor((H - (n - 1) * pattern.inGap) / 2);
   if (always) {
     const y = Math.floor(H / 2);
@@ -390,9 +390,11 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
   } else {
     for (let i = 0; i < n; i++) {
       const y = inTop + (perm ? perm.indexOf(i) : i) * pattern.inGap;     // perm: 上から並べるレバーの順
-      L.set(0, y, { t: 'gen' }); L.parts.push({ type: 'generator', x: 0, y, dir: 'N' });
       L.set(1, y, { t: 'lever', n: `in${i}` }); L.parts.push({ type: 'lever', x: 1, y, dir: 'N', input: i });
-      for (const [x, yy] of [[0, y - 1], [0, y + 1], [1, y - 1], [1, y + 1]]) L.reserve(x, yy);
+      // leverGen: レバーの電気は弱い（強さ5）ので、線が長いと届かない。そのときは隣に発電機を置き、
+      // 入っているあいだ発電機の電気を通す（切れていれば通さない）
+      if (leverGen) { L.set(0, y, { t: 'gen' }); L.parts.push({ type: 'generator', x: 0, y, dir: 'N' }); }
+      for (const [x, yy] of [[0, y], [0, y - 1], [0, y + 1], [1, y - 1], [1, y + 1]]) L.reserve(x, yy);
       sources[`in${i}`] = { x: 2, y };
     }
   }
@@ -449,7 +451,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
     });
   });
   if (gates.some(g => g.bad || !g.at)) return null;
-  // direct: 1か所でしか使わないレバーは、左端に並べずに回路の口へ直接置く（その外側に発電機）。線が要らない
+  // direct: 1か所でしか使わないレバーは、左端に並べずに回路の口へ直接置く。線が要らない
   let moved = 0;
   if (direct) {
     for (let i = 0; i < n; i++) {
@@ -459,29 +461,29 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
       const p = list[0];
       const g = gates.find(gg => Math.abs(gg.at.x - p.x) + Math.abs(gg.at.y - p.y) === 1);
       if (!g) continue;
-      const gx = p.x * 2 - g.at.x, gy = p.y * 2 - g.at.y;            // 回路から見て口の向こう側
       const around = c => DIRS4.map(([dx, dy]) => ({ x: c.x + dx, y: c.y + dy }));
-      const okNb = (c, skip) => around(c).every(q => skip.some(s => s.x === q.x && s.y === q.y) || !L.get(q.x, q.y) || L.get(q.x, q.y).t === 'res');
-      if (!L.free(gx, gy)) continue;
-      if (!okNb(p, [g.at, { x: gx, y: gy }]) || !okNb({ x: gx, y: gy }, [p])) continue;
-      // 左端のレバーと発電機を外す
+      // レバーは電源なので、回路の口のほかに隣り合う物があってはいけない（電気が漏れる）
+      if (!around(p).every(q => (q.x === g.at.x && q.y === g.at.y) || !L.get(q.x, q.y) || L.get(q.x, q.y).t === 'res')) continue;
+      // 左端のレバーを外す
       const src = sources[net];
       const li = L.parts.findIndex(q => q.type === 'lever' && q.input === i);
       L.parts.splice(li, 1);
       const gi = L.parts.findIndex(q => q.type === 'generator' && q.x === 0 && q.y === src.y);
-      L.parts.splice(gi, 1);
+      if (gi >= 0) L.parts.splice(gi, 1);
       for (const [x, yy] of [[0, src.y], [1, src.y], [0, src.y - 1], [0, src.y + 1], [1, src.y - 1], [1, src.y + 1]]) L.occ.delete(key(x, yy));
       delete sources[net]; delete pins[net];
       L.set(p.x, p.y, { t: 'lever', n: net }); L.parts.push({ type: 'lever', x: p.x, y: p.y, dir: 'N', input: i });
-      L.set(gx, gy, { t: 'gen' }); L.parts.push({ type: 'generator', x: gx, y: gy, dir: 'N' });
-      for (const q of [...around(p), ...around({ x: gx, y: gy })]) L.reserve(q.x, q.y);
+      for (const q of around(p)) L.reserve(q.x, q.y);
       moved++;
     }
   }
   // 出力の口（右端）
   // 出力の口は、出力を出す回路の正面のマスそのもの（線を延ばさない。遠いと電気が弱まり、場所も取る）
   let ox, oy;
-  if (sources[out] && !always && nearOut) ({ x: ox, y: oy } = sources[out]);
+  if (sources[out] && !always && nearOut) {
+    ({ x: ox, y: oy } = sources[out]);
+    if (!L.get(ox, oy)) L.set(ox, oy, { t: 'pin', n: out });        // 回路が無い（レバーそのまま）ときは、レバーの隣の電線1マス
+  }
   else {
     ox = Math.min(W - 2, (gates.length ? Math.max(...gates.map(g => g.at.x)) : 2) + 3); oy = Math.floor(H / 2);
     if (L.get(ox, oy)) return null;
@@ -570,13 +572,17 @@ export function generateCircuits(registry, n, table) {
   const perms = permutations([...Array(n).keys()]);
   const tries = [];
   for (const direct of [true, false]) for (const boost of [false, true]) for (const p of PATTERNS) for (const perm of perms) tries.push({ pattern: p, boost, perm, direct });
-  tries.forEach(({ pattern, boost, perm, direct }, order) => {
+  // レバーは電源（強さ5）。まず発電機なしで試し、レバーの電気が届かず候補が少ないときだけ、
+  // 左端のレバーの隣に発電機を置いて強める形も試す
+  const attempt = (leverGen) => (t, order) => {
+    const { pattern, boost, perm, direct } = t;
     // 出力の口は回路のすぐ前（線を延ばさない）。つなげなければ、少し先に離してもう一度
-    let got = layoutCircuit(n, root, pattern, boost, perm, direct, true);
+    let got = layoutCircuit(n, root, pattern, boost, perm, direct, true, leverGen);
     if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) {
-      got = layoutCircuit(n, root, pattern, boost, perm, direct, false);
+      got = layoutCircuit(n, root, pattern, boost, perm, direct, false, leverGen);
       if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return;
     }
+    const gen = leverGen && got.parts.some(p => p.type === 'generator' && p.x === 0);
     // 外接する長方形に詰める
     const x0 = Math.min(...got.parts.map(p => p.x)), y0 = Math.min(...got.parts.map(p => p.y));
     const x1 = Math.max(...got.parts.map(p => p.x)), y1 = Math.max(...got.parts.map(p => p.y));
@@ -590,13 +596,15 @@ export function generateCircuits(registry, n, table) {
     const name = `回路 ${text}（${pattern.name}${boost ? '・強め直し' : ''}）`;
     candidates.push({
       pattern: pattern.id, boost, name, order,
-      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
+      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (gen ? '・発電機でレバーを強める' : '') + (perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
       gates: buildings.filter(b => b.type === 'logic-circuit').length, width, height, area: width * height, count: buildings.length,
       input: got.parts.filter(p => p.type === 'lever').sort((a, b) => a.input - b.input).map(p => ({ x: p.x - x0, y: p.y - y0 })),
       output: { x: got.out.x - x0, y: got.out.y - y0 },
       blueprint: { format: BLUEPRINT_FORMAT, version: BLUEPRINT_VERSION, name, width, height, buildings },
     });
-  });
+  };
+  tries.forEach(attempt(false));
+  if (candidates.length < 5) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
   candidates.sort((a, b) => (a.area - b.area) || (a.count - b.count) || (a.order - b.order));
   return { terms, text, how, candidates };
 }
