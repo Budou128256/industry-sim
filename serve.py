@@ -1,7 +1,8 @@
 """開発用の小さなサーバ。
 
-    py -3 serve.py
-    → http://127.0.0.1:8080/
+    python3 serve.py      （Codespaces / Mac / Linux）
+    py -3 serve.py        （Windows。ランチャーが無ければ python serve.py）
+    → http://127.0.0.1:8080/   番号を付けるとポートを変えられる（例: python3 serve.py 8000）
 
 ES モジュール（import / export）は file:// では動かないので、HTTP で配る必要がある。
 標準ライブラリだけ。追加インストールは要らない。
