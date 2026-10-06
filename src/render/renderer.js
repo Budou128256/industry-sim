@@ -21,7 +21,7 @@ export class Renderer {
     this.ghost = null;              // { cells, ok, def, dir }
     this.showPower = true;          // 電気の届く範囲を塗るか
     this.selection = null;          // 選んでいる範囲 { x0, y0, x1, y1 }（両端を含む）
-    this.pasteGhost = null;         // 貼ろうとしている設計図の下見 [{ def, x, y, dir, ok }]
+    this.pasteGhost = null;         // 貼ろうとしている設計図の下見 { items: [{ def, x, y, dir, state, hit }], from }
     /** 一番強い電源の強さ（電線の明るさ・塗りの濃さの基準）。data の power.source から */
     this.maxPower = 1;
     for (const b of registry.buildings.values()) {
@@ -345,20 +345,49 @@ export class Renderer {
     }
   }
 
-  /** 設計図の下見。建物ごとに置ける（緑）・置けない（赤）。向きの印も描く。 */
-  drawPasteGhost(list) {
+  /**
+   * 設計図の下見（貼り付け・移動）。
+   *   建物そのものを半透明で描き、置ける（緑）・上書き（橙）・置けない（赤）・同じ物がもうある（灰）の枠で囲む。
+   *   移動のときは、動かす元の範囲を暗くする。
+   * g = { items: [{ def, x, y, dir, state, hit }], from: 動かす元の範囲 | null }
+   */
+  drawPasteGhost({ items, from }) {
     const ctx = this.ctx, t = this.tile;
-    for (const g of list) {
-      const cells = g.def ? footprint(g.x, g.y, g.def.size, g.dir) : [{ x: g.x, y: g.y }];
-      this.drawGhost({ cells, ok: g.ok });
-      if (g.def && g.def.directional) {
-        const d = DELTA[g.dir], { px, py } = this.toScreen(g.x, g.y);
-        const { width: w, height: h } = rotatedSize(g.def.size, g.dir);
-        ctx.fillStyle = 'rgba(11,14,21,0.8)';
-        ctx.beginPath();
-        ctx.arc(px + w * t / 2 + d.x * w * t * 0.33, py + h * t / 2 + d.y * h * t * 0.33, Math.max(2, t * 0.09), 0, 7);
-        ctx.fill();
+    if (from) {
+      const { px, py } = this.toScreen(from.x0, from.y0);
+      const w = (from.x1 - from.x0 + 1) * t, h = (from.y1 - from.y0 + 1) * t;
+      ctx.fillStyle = 'rgba(11,14,21,0.55)';
+      ctx.fillRect(px, py, w, h);
+      ctx.strokeStyle = 'rgba(148,163,184,0.8)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(px + 0.5, py + 0.5, w - 1, h - 1);
+      ctx.setLineDash([]);
+    }
+    // 建物そのもの（半透明）
+    ctx.globalAlpha = 0.7;
+    for (const g of items) {
+      if (!g.def) continue;
+      if (g.def.layer === 'floor') {
+        const { px, py } = this.toScreen(g.x, g.y);
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath(); ctx.arc(px + t / 2, py + t / 2, Math.max(2, t * 0.12), 0, 7); ctx.fill();
+      } else {
+        this.drawBuilding({ id: null, type: g.def.id, x: g.x, y: g.y, dir: g.dir }, rotatedSize(g.def.size, g.dir), null);
       }
+    }
+    ctx.globalAlpha = 1;
+    // 枠
+    const COLOR = { ok: '74,222,128', replace: '251,146,60', blocked: '248,113,113', same: '148,163,184' };
+    for (const g of items) {
+      const size = g.def ? rotatedSize(g.def.size, g.dir) : { width: 1, height: 1 };
+      const { px, py } = this.toScreen(g.x, g.y);
+      const w = size.width * t, h = size.height * t;
+      const c = COLOR[g.state] || COLOR.blocked;
+      if (g.state === 'blocked') { ctx.fillStyle = `rgba(${c},0.35)`; ctx.fillRect(px, py, w, h); }
+      ctx.strokeStyle = `rgba(${c},0.95)`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px + 1, py + 1, w - 2, h - 2);
     }
   }
 

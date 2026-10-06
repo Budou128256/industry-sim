@@ -4,11 +4,14 @@
  * こうしておくと、あとで取り消し（undo）・記録・リプレイ・通信を足しやすい。
  *
  * 出すコマンド:
- *   { type:'place',  x, y, dir }      置く
+ *   { type:'place',  x, y, ctrl }     置く（ctrl: Ctrl を押しながら。貼り付けで上書き）
  *   { type:'remove', x, y }           撤去
  *   { type:'rotate', x, y }           回す
  *   { type:'drag',   from, to }       連続設置（前のマス → 今のマス。マウスの通った道どおりに置く）
- *   { type:'release' }                左ボタンを離した（範囲選択の確定）
+ *   { type:'release', ctrl }          左ボタンを離した（範囲選択の確定・ドラッグで移動の確定）
+ *   { type:'hover', x, y, ctrl }      マウスが動いた（Ctrl を押した・離したときも出す）
+ *   { type:'flip', axis }             V: 上下反転（axis 'v'）。左右反転（'h'）はボタンだけ（キーは無し。ユーザーの希望）
+ *   { type:'move' }                   M: 選んだ範囲をまとめて動かす
  *   { type:'copy' | 'cut' | 'paste' | 'delete' }   Ctrl+C / Ctrl+X / Ctrl+V / Delete
  *   { type:'fit' }                    盤面全体を表示（F / Home）
  *   { type:'redraw' }                 画面を動かした（描き直す）
@@ -36,6 +39,7 @@ export class Input {
     this.space = false;          // スペースを押している（左ドラッグで画面を動かす）
     this.held = new Set();       // 押している移動キー
     this.shift = false;
+    this.ctrl = false;           // Ctrl（Mac は ⌘）を押している
     this.lastFrame = 0;
     this.bind();
   }
@@ -53,12 +57,16 @@ export class Input {
         return;
       }
       if (e.button === 2) { this.emit({ type: 'remove', ...cell }); return; }
-      if (e.button === 0) { this.dragStart = cell; this.dragLast = cell; this.emit({ type: 'place', ...cell }); }
+      if (e.button === 0) {
+        this.dragStart = cell; this.dragLast = cell;
+        this.emit({ type: 'place', ...cell, ctrl: e.ctrlKey || e.metaKey });
+      }
     });
 
     cv.addEventListener('mousemove', e => {
       const cell = r.toCell(e.clientX, e.clientY);
       r.hover = cell;
+      this.ctrl = e.ctrlKey || e.metaKey;
       if (this.panning) {
         const dx = (e.clientX - this.panning.px) / r.tile;
         const dy = (e.clientY - this.panning.py) / r.tile;
@@ -71,14 +79,14 @@ export class Input {
         const last = this.dragLast;
         if (last.x === cell.x && last.y === cell.y) return;    // 同じマスの中で動いただけ
         this.dragLast = cell;
-        this.emit({ type: 'drag', from: last, to: cell });
+        this.emit({ type: 'drag', from: last, to: cell, ctrl: this.ctrl });
       } else {
-        this.emit({ type: 'hover', ...cell });
+        this.emit({ type: 'hover', ...cell, ctrl: this.ctrl });
       }
     });
 
-    window.addEventListener('mouseup', () => {
-      if (this.dragStart) this.emit({ type: 'release' });
+    window.addEventListener('mouseup', e => {
+      if (this.dragStart) this.emit({ type: 'release', ctrl: e.ctrlKey || e.metaKey });
       this.dragStart = null; this.panning = null;
     });
 
@@ -93,6 +101,7 @@ export class Input {
       if (typing(e)) return;
       this.shift = e.shiftKey;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (k === 'Control' || k === 'Meta') { this.setCtrl(true); return; }
       if (e.ctrlKey || e.metaKey) {
         const cmd = { c: 'copy', x: 'cut', v: 'paste' }[k];
         if (cmd) { e.preventDefault(); this.emit({ type: cmd }); }
@@ -104,6 +113,8 @@ export class Input {
         const c = r.hover;
         if (c) this.emit({ type: 'rotate', ...c });
       }
+      if (k === 'v') this.emit({ type: 'flip', axis: 'v' });
+      if (k === 'm') this.emit({ type: 'move' });
       if (k === 'f' || k === 'Home') this.emit({ type: 'fit' });
       if (k === '+' || k === '=' || k === ';') { r.zoomCenter(1.25); this.emit({ type: 'redraw' }); }
       if (k === '-') { r.zoomCenter(1 / 1.25); this.emit({ type: 'redraw' }); }
@@ -115,8 +126,17 @@ export class Input {
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       this.held.delete(k);
       if (k === ' ') { this.space = false; cv.style.cursor = ''; }
+      if (k === 'Control' || k === 'Meta') this.setCtrl(false);
     });
-    window.addEventListener('blur', () => { this.held.clear(); this.space = false; cv.style.cursor = ''; });
+    window.addEventListener('blur', () => { this.held.clear(); this.space = false; cv.style.cursor = ''; this.setCtrl(false); });
+  }
+
+  /** Ctrl を押した・離した。貼り付けの下見（上書きするか）を描き直すため、今のマスで hover を出し直す。 */
+  setCtrl(on) {
+    if (this.ctrl === on) return;
+    this.ctrl = on;
+    const c = this.renderer.hover;
+    if (c) this.emit({ type: 'hover', ...c, ctrl: on });
   }
 
   /** 移動キーを押している間、毎コマ少しずつ画面を動かす。 */

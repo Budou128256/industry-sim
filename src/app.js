@@ -17,7 +17,9 @@ import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
 import { SimClient } from './client.js';
 import { listLocal, loadLocal, removeLocal, saveLocal } from './storage.js';
-import { BLUEPRINT_FORMAT, checkBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
+import {
+  BLUEPRINT_FORMAT, buildingsInside, captureBlueprint, checkBlueprint, flipBlueprint, previewBlueprint, rectFrom, rotateBlueprint,
+} from './core/blueprint.js';
 
 const BOARD = { width: 64, height: 64 };
 /** ブラウザの中に自動保存する名前と間隔。 */
@@ -42,7 +44,8 @@ const state = {
   selStart: null,     // 範囲選択を始めたマス
   selection: null,    // 選んでいる範囲 { x0, y0, x1, y1 }
   clipboard: null,    // コピーした設計図
-  paste: null,        // 貼り付け中の設計図（マウスに付いてくる）
+  paste: null,        // 貼り付け中・移動中の設計図（マウスに付いてくる）{ bp, anchor, move, ctrl }
+  swallow: false,     // 左ボタンを離すまで、ドラッグを無視する（クリックで貼り終えた直後）
 };
 
 const $ = id => document.getElementById(id);
@@ -93,6 +96,10 @@ async function main() {
   $('btnCut').onclick = () => onCommand({ type: 'cut' });
   $('btnDelete').onclick = () => onCommand({ type: 'delete' });
   $('btnPaste').onclick = () => onCommand({ type: 'paste' });
+  $('btnMove').onclick = () => onCommand({ type: 'move' });
+  $('btnPRot').onclick = () => onCommand({ type: 'rotate', ...(state.renderer.hover || { x: -1, y: -1 }) });
+  $('btnFlipH').onclick = () => onCommand({ type: 'flip', axis: 'h' });
+  $('btnFlipV').onclick = () => onCommand({ type: 'flip', axis: 'v' });
   $('btnSaveBp').onclick = saveBlueprint;
   $('btnFit').onclick = () => onCommand({ type: 'fit' });
   $('btnZoomIn').onclick = () => { state.renderer.zoomCenter(1.25); onCommand({ type: 'redraw' }); };
@@ -274,7 +281,7 @@ function selectBuilding(id) {
   if (!id) { state.renderer.ghost = null; return; }
   if (id === SELECT_TOOL) {
     state.renderer.ghost = null;
-    status('ドラッグで範囲を選びます。選んだら Ctrl+C でコピー、Ctrl+X で切り取り、Delete で削除、「設計図として保存」で保存');
+    status('ドラッグで範囲を選びます。選んだ範囲の中をドラッグするとまとめて動かせます（M でも）。Ctrl+C コピー / Ctrl+X 切り取り / Delete 削除');
     return;
   }
   if (id === RESOURCE_TOOL) {
@@ -300,7 +307,12 @@ function onCommand(cmd) {
   const select = state.selected === SELECT_TOOL;
   const def = state.selected && !tool && !select ? registry.building(state.selected) : null;
 
-  // 設計図を貼っているとき（マウスに付いてくる）
+  // クリックで貼り終えた直後は、左ボタンを離すまでドラッグを無視する
+  if (state.swallow) {
+    if (cmd.type === 'drag') return;
+    if (cmd.type === 'release') { state.swallow = false; return; }
+  }
+  // 設計図を貼っている・まとめて動かしているとき（マウスに付いてくる）
   if (state.paste && pasteCommand(cmd)) return;
   // 範囲選択・コピー・貼り付け・画面
   switch (cmd.type) {
@@ -311,6 +323,10 @@ function onCommand(cmd) {
       if (state.clipboard) enterPaste(state.clipboard);
       else status('コピーした範囲がありません（範囲を選んで Ctrl+C）', true);
       return;
+    case 'move': startMove(renderer.hover, false); return;
+    case 'flip':
+      status('反転（V・ボタン）は、貼り付け中（Ctrl+V）か移動中（M）に使えます');
+      return;
     case 'fit':
       renderer.fitTo(world.width, world.height);
       sendView(); draw();
@@ -320,6 +336,8 @@ function onCommand(cmd) {
       return;
   }
   if (select && (cmd.type === 'place' || cmd.type === 'drag')) {
+    // 選んだ範囲の中を押したら、ドラッグでまとめて動かす
+    if (cmd.type === 'place' && inRect(state.selection, cmd)) { state.selStart = null; startMove(cmd, true); return; }
     const to = cmd.type === 'place' ? cmd : cmd.to;
     if (cmd.type === 'place') state.selStart = { x: cmd.x, y: cmd.y };
     if (!state.selStart) return;
@@ -392,13 +410,16 @@ function setSelection(rect) {
 }
 
 function updateSelButtons() {
-  for (const id of ['btnCopy', 'btnCut', 'btnDelete', 'btnSaveBp']) $(id).disabled = !state.selection;
+  for (const id of ['btnCopy', 'btnCut', 'btnDelete', 'btnSaveBp', 'btnMove']) $(id).disabled = !state.selection;
   $('btnPaste').disabled = !state.clipboard;
+  for (const id of ['btnPRot', 'btnFlipH', 'btnFlipV']) $(id).disabled = !state.paste;
 }
+
+const inRect = (r, c) => !!r && !!c && c.x >= r.x0 && c.x <= r.x1 && c.y >= r.y0 && c.y <= r.y1;
 
 function selectionStatus() {
   const s = state.selection;
-  status(`範囲 (${s.x0}, ${s.y0})〜(${s.x1}, ${s.y1})（${s.x1 - s.x0 + 1}x${s.y1 - s.y0 + 1}）を選びました — Ctrl+C コピー / Ctrl+X 切り取り / Delete 削除 / 設計図として保存`);
+  status(`範囲 (${s.x0}, ${s.y0})〜(${s.x1}, ${s.y1})（${s.x1 - s.x0 + 1}x${s.y1 - s.y0 + 1}）を選びました — 中をドラッグ・M で移動 / Ctrl+C コピー / Ctrl+X 切り取り / Delete 削除 / 設計図として保存`);
 }
 
 async function copySelection(cut) {
@@ -421,54 +442,148 @@ async function deleteSelection() {
   status(`建物 ${removed} 個を削除しました（中身は床に落ちます）`);
 }
 
-/** 設計図をマウスに付けて、クリックで貼れるようにする。 */
-function enterPaste(bp) {
-  state.paste = { bp };
+/**
+ * 設計図をマウスに付けて、クリックで貼れるようにする。
+ * opts.anchor: 設計図のどのマスをマウスの下に置くか（既定は真ん中あたり）
+ * opts.move:   まとめて移動のとき { rect, transforms, drag }（drag: ボタンを離したら置く）
+ */
+function enterPaste(bp, opts = {}) {
+  const anchor = opts.anchor || { x: Math.floor((bp.width - 1) / 2), y: Math.floor((bp.height - 1) / 2) };
+  state.paste = { bp, anchor, move: opts.move || null, ctrl: false };
   state.renderer.ghost = null;
   setSelection(null);
-  status(`「${bp.name || 'コピー'}」（${bp.width}x${bp.height}・建物 ${bp.buildings.length}）をクリックで貼ります。R で回す、右クリック・Esc でやめる`);
+  pasteStatus();
   if (state.renderer.hover) pastePreview(state.renderer.hover);
 }
 
 function exitPaste(quiet = false) {
   if (!state.paste) return;
+  const wasMove = !!state.paste.move;
   state.paste = null;
   state.renderer.pasteGhost = null;
-  if (!quiet) status('貼り付けをやめました');
+  updateSelButtons();
+  if (!quiet) status(wasMove ? '移動をやめました' : '貼り付けをやめました');
   draw();
 }
 
-/** マウスのマスが設計図の真ん中あたりになるように、左上を決める。 */
+/** 選んだ範囲を、まとめて動かし始める。cell が範囲の中なら、そのマスを掴んだ形で動かす。 */
+function startMove(cell, drag) {
+  const rect = state.selection;
+  if (!rect) { status('先に「範囲を選ぶ」で範囲を選んでください', true); return; }
+  // 下見用の写しは画面の写し（view）から作る。実際に動かすのは Worker の中の本物
+  const bp = captureBlueprint(state.view.world, rect);
+  if (!bp.buildings.length) { status('範囲の中に（全部が入っている）建物がありません', true); return; }
+  const anchor = inRect(rect, cell) ? { x: cell.x - rect.x0, y: cell.y - rect.y0 } : null;
+  enterPaste(bp, { anchor, move: { rect, transforms: [], drag } });
+}
+
+/** マウスのマスと掴んでいるマスから、設計図の左上を決める。 */
 function pasteOrigin(cell) {
-  const { bp } = state.paste;
-  return { x: cell.x - Math.floor((bp.width - 1) / 2), y: cell.y - Math.floor((bp.height - 1) / 2) };
+  const a = state.paste.anchor;
+  return { x: cell.x - a.x, y: cell.y - a.y };
 }
 
-function pastePreview(cell) {
+function pasteStatus(counts) {
+  const p = state.paste;
+  const what = p.move ? `建物 ${p.bp.buildings.length} 個を移動中` : `「${p.bp.name || 'コピー'}」（${p.bp.width}x${p.bp.height}・建物 ${p.bp.buildings.length}）を貼り付け中`;
+  const how = p.move && p.move.drag ? 'ボタンを離すと置きます' : 'クリックで置きます';
+  let line = `${what} — ${how}（Ctrl を押しながらだと上書き）。R 回す / V 上下反転 / 左右反転はボタン / 右クリック・Esc でやめる`;
+  if (counts) {
+    const parts = [`置ける ${counts.ok}`];
+    if (counts.replace) parts.push(`上書き ${counts.replace}`);
+    if (counts.same) parts.push(`同じ物がある ${counts.same}`);
+    if (counts.blocked) parts.push(`置けない ${counts.blocked}`);
+    line += `　［${parts.join('・')}］`;
+  }
+  status(line, !!(counts && counts.blocked));
+}
+
+/** マウスの位置に置いたときの下見。建物そのものを半透明で描き、置ける（緑）・上書き（橙）・置けない（赤）で囲む。 */
+function pastePreview(cell, ctrl, quiet = false) {
+  const p = state.paste;
+  if (ctrl !== undefined) p.ctrl = ctrl;
   const o = pasteOrigin(cell);
-  state.renderer.pasteGhost = previewBlueprint(state.view.world, state.registry, state.paste.bp, o.x, o.y);
+  const world = state.view.world;
+  const ignore = p.move ? new Set(buildingsInside(world, p.move.rect).map(b => b.id)) : null;
+  const items = previewBlueprint(world, state.registry, p.bp, o.x, o.y, { overwrite: p.ctrl, ignore, same: !p.move });
+  state.renderer.pasteGhost = { items, from: p.move ? p.move.rect : null };
+  const counts = { ok: 0, replace: 0, same: 0, blocked: 0 };
+  for (const g of items) counts[g.state]++;
+  if (!quiet) pasteStatus(counts);
   draw();
 }
 
-/** 貼り付け中のコマンド。処理したら true。 */
+/** 回す（'r'）・左右反転（'h'）・上下反転（'v'）。掴んでいるマスも一緒に動かすので、マウスの下が軸になる。 */
+function transformPaste(t) {
+  const p = state.paste, { width: W, height: H } = p.bp, a = p.anchor;
+  if (t === 'r') {
+    p.bp = rotateBlueprint(p.bp, state.registry);
+    p.anchor = { x: H - 1 - a.y, y: a.x };
+  } else {
+    p.bp = flipBlueprint(p.bp, state.registry, t);
+    p.anchor = t === 'h' ? { x: W - 1 - a.x, y: a.y } : { x: a.x, y: H - 1 - a.y };
+  }
+  if (p.move) p.move.transforms.push(t);
+  if (state.renderer.hover) pastePreview(state.renderer.hover);
+  else pasteStatus();
+}
+
+/** 置く（貼る・動かす）。ctrl なら重なる建物を上書きする。 */
+async function commitPaste(cell, ctrl) {
+  const p = state.paste, o = pasteOrigin(cell);
+  if (p.move) {
+    const { rect, transforms } = p.move;
+    exitPaste(true);
+    if (!transforms.length && o.x === rect.x0 && o.y === rect.y0) {
+      setSelection(rect);
+      status('元の場所のままです（動かしていません）');
+      return;
+    }
+    const r = await state.client.call('move', { rect, transforms, x: o.x, y: o.y, overwrite: !!ctrl });
+    if (r.blocked) {
+      setSelection(rect);
+      status(`重なる・盤面の外の建物が ${r.blocked} 個あるので動かしませんでした。Ctrl を押しながら置くと上書きします`, true);
+      return;
+    }
+    if (!r.moved) { setSelection(rect); status('範囲の中に動かせる建物がありません', true); return; }
+    setSelection({ x0: o.x, y0: o.y, x1: o.x + r.width - 1, y1: o.y + r.height - 1 });
+    status(`建物 ${r.moved} 個を中身ごと動かしました` + (r.replaced ? `（上書きで ${r.replaced} 個を撤去。中身は床へ）` : ''));
+    return;
+  }
+  const r = await state.client.call('paste', { blueprint: p.bp, x: o.x, y: o.y, overwrite: !!ctrl });
+  const notes = [];
+  if (r.replaced) notes.push(`上書きで ${r.replaced} 個を撤去（中身は床へ）`);
+  if (r.same) notes.push(`同じ物がもうある ${r.same} 個はそのまま`);
+  if (r.skipped) notes.push(`重なる・盤面の外の ${r.skipped} 個は飛ばしました（Ctrl+クリックで上書き）`);
+  status(`建物 ${r.placed} 個を貼りました` + (notes.length ? `（${notes.join('、')}）` : '') + '。続けてクリックで貼れます', !!r.skipped);
+}
+
+/** 貼り付け中・移動中のコマンド。処理したら true。 */
 function pasteCommand(cmd) {
+  const p = state.paste, dragMove = !!(p.move && p.move.drag);
   switch (cmd.type) {
-    case 'hover': pastePreview(cmd); return true;
-    case 'place': {
-      const o = pasteOrigin(cmd), bp = state.paste.bp;
-      state.client.call('paste', { blueprint: bp, x: o.x, y: o.y }).then(r => {
-        status(`建物 ${r.placed} 個を貼りました` + (r.skipped ? `（重なる・盤面の外の ${r.skipped} 個は飛ばしました）` : '')
-          + '。続けてクリックで貼れます', !!r.skipped);
-        if (state.paste && state.renderer.hover) pastePreview(state.renderer.hover);
-      });
+    case 'hover': pastePreview(cmd, cmd.ctrl); return true;
+    case 'place':
+      if (dragMove) return true;
+      if (p.move) state.swallow = true;      // 移動はこれで終わり。このボタンのドラッグは範囲選択にしない
+      // 貼った結果を読めるように、下見は描き直すが案内の文は変えない（次にマウスを動かすまで）
+      commitPaste(cmd, cmd.ctrl).then(() => { if (state.paste && state.renderer.hover) pastePreview(state.renderer.hover, undefined, true); });
+      return true;
+    case 'drag':
+      if (dragMove) pastePreview(cmd.to, cmd.ctrl);
+      return true;
+    case 'release':
+      if (dragMove && state.renderer.hover) commitPaste(state.renderer.hover, cmd.ctrl);
+      return true;
+    case 'rotate': transformPaste('r'); return true;
+    case 'flip': transformPaste(cmd.axis); return true;
+    case 'move': return true;
+    case 'remove': case 'cancel': {
+      const rect = p.move && p.move.rect;
+      exitPaste();
+      if (rect) setSelection(rect);
       return true;
     }
-    case 'drag': case 'release': return true;
-    case 'rotate':
-      state.paste.bp = rotateBlueprint(state.paste.bp, state.registry);
-      pastePreview(cmd);
-      return true;
-    case 'remove': case 'cancel': exitPaste(); return true;
     default: return false;
   }
 }
