@@ -104,7 +104,6 @@
    - Phase 6b: User / API（サーバに保存）
    - Phase 7: 高度な物流 / 研究 / AI / マルチプレイ
    - 盤面の大きさを画面から変える（今は 64x64 固定。Phase 5 で大きな盤面でも動くようにはなっている）
-   - 電気の届く距離（今は24マス）をゲームで確かめる（資料で23と24に分かれている。下の「Core Keeper の値の確認」）
 4. Phase 4 で後回しにした液体・保管の拡張は**未定**。やるかどうかをユーザーに聞いてから
 5. テストを足し、この表と段階チェックを更新してコミットし、`git push` で GitHub へ上げる
 
@@ -180,7 +179,7 @@
 | 炉は電気を使うか | **使わない**と判断（今のまま）。同じ一覧に入っていない。自動精錬の例では、アームが電気を受けて炉に入れている | [Furnace](https://corekeeper.atma.gg/en/Furnace) / [The Wiring Guide](https://steamcommunity.com/sharedfiles/filedetails/?id=2827492841) |
 | 機械も電気を通すか | **通す**（今のまま）。「機械も電線1マスと同じく強さを1下げる」 | [Automation](https://corekeeper.atma.gg/en/Automation) |
 | 弱い電気で動くか | アーム・ドリル・ドアは強さに関係なく動く（今のまま。強さ1以上で動く） | [Automation](https://corekeeper.atma.gg/en/Automation) |
-| 届く距離 | **資料で食い違う**。Wiki は「全力で18マス、さらに5マスで弱まる」（計23）、2022年6月の Steam ガイドは「24マス」。今は24のまま。ユーザーに確認中 | [Automation](https://corekeeper.atma.gg/en/Automation) / [The Wiring Guide](https://steamcommunity.com/sharedfiles/filedetails/?id=2827492841) |
+| 届く距離 | **資料で食い違う**。Wiki は「全力で18マス、さらに5マスで弱まる」（計23）、2022年6月の Steam ガイドは「24マス」。**24のまま**（2026-10-06 ユーザーが選択） | [Automation](https://corekeeper.atma.gg/en/Automation) / [The Wiring Guide](https://steamcommunity.com/sharedfiles/filedetails/?id=2827492841) |
 
 ## Phase 4 で決めたこと・やったこと（2026-10-05）
 
