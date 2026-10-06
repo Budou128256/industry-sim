@@ -1,0 +1,21 @@
+{
+  "id": "shredder",
+  "name": "粉砕機(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#6d6a86",
+  "directional": true,
+  "tags": [
+    "production"
+  ],
+  "note": "スクラップ用アイテムを壊して、2〜3種類の物にして向いている方向（正面）へ送り出す（Core Keeper の Shredder）。正面がベルトなら上へ、それ以外は床へ。1個10秒。材料はアームで入れる",
+  "machine": {
+    "outputFront": true
+  },
+  "power": {
+    "needs": true,
+    "conducts": true
+  }
+}

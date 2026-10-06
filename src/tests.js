@@ -1316,6 +1316,47 @@ test('回収機: 正面5x5の床の物を、1秒ごとに背面へまとめて�
   eq(s2.contentsAt(3, 4).ground, [{ item: 'coal', count: 1 }]);
   eq(s2.contentsAt(3, 6).collector.state, '電力なし');
 });
+test('焼却炉: どんな物でも入り、炉と同じく10秒に1個消す。出力は無い', () => {
+  const w = new World({ width: 6, height: 3 });
+  place(w, reg.building('generator'), 0, 0, 'N');
+  place(w, reg.building('incinerator'), 1, 0, 'N');
+  const sim = new Sim(w, reg);
+  eq(sim.addItems(1, 0, 'coal', 3), 'machine');
+  eq(sim.addItems(1, 0, 'iron-plate', 1), 'ground', '違う種類が入った');
+  for (let i = 0; i < 20; i++) sim.stepSecond();
+  const m = sim.contentsAt(1, 0).machine;
+  eq([m.input, m.output], [{ item: 'coal', count: 1 }, null]);
+  eq(sim.destroyed, { coal: 2 });
+  for (let i = 0; i < 10; i++) sim.stepSecond();
+  eq(sim.contentsAt(1, 0).machine.input, null);
+  eq(sim.contentsAt(1, 0).machine.state, '原料待ち');
+});
+test('粉砕機: スクラップ用アイテム1個を10秒で2〜3種類にして正面へ送り出す。扱えない物は入らない', () => {
+  const w = new World({ width: 8, height: 4 });
+  place(w, reg.building('generator'), 0, 1, 'N');
+  place(w, reg.building('shredder'), 1, 1, 'E');           // 正面は (2,1)
+  place(w, reg.building('belt'), 2, 1, 'E');
+  place(w, reg.building('shredder'), 1, 2, 'S');           // 正面は (1,3) の床。発電機とは (1,1) の粉砕機を通じてつながる
+  const sim = new Sim(w, reg);
+  eq(sim.addItems(1, 1, 'scrap-a', 2), 'machine');
+  eq(sim.addItems(1, 2, 'scrap-b', 1), 'machine');
+  eq(sim.addItems(1, 1, 'iron-ore', 1), 'ground', '扱えない物が入った');
+  for (let i = 0; i < 10; i++) sim.stepSecond();
+  const kinds = l => Object.fromEntries(l.map(s => [s.item, s.count]));
+  const onBelt = [...sim.contentsAt(2, 1).belt, ...sim.contentsAt(3, 1).ground];
+  eq(kinds(onBelt), { 'iron-plate': 2, 'copper-plate': 1, 'scrap-part': 1 }, 'A は3種類');
+  eq(kinds(sim.contentsAt(1, 3).ground), { 'copper-plate': 1, 'scrap-part': 2 }, 'B は2種類');
+  eq(sim.contentsAt(1, 1).machine.input, { item: 'scrap-a', count: 1 });
+  eq(sim.contentsAt(1, 1).machine.output, null, '出力に溜まった');
+  // 正面が盤面の外なら加工しない
+  const w2 = new World({ width: 3, height: 3 });
+  place(w2, reg.building('generator'), 1, 1, 'N');
+  place(w2, reg.building('shredder'), 2, 1, 'E');
+  const s2 = new Sim(w2, reg);
+  s2.addItems(2, 1, 'scrap-a', 1); for (let i = 0; i < 12; i++) s2.stepSecond();
+  eq(s2.contentsAt(2, 1).machine.state, '出し先が盤面の外');
+  eq(s2.contentsAt(2, 1).machine.input, { item: 'scrap-a', count: 1 });
+});
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {
     for (const id of Object.keys(r.inputs)) ok(reg.item(id), `${r.id} の材料 ${id} が無い`);

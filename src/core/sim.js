@@ -46,6 +46,7 @@ export class Sim {
     this.splitState = new Map(); // スプリッターの id -> { next }（中身は belts に持つ。Phase 7）
     this.moved = new Map();      // まとめて移動した建物の 元の id -> 新しい id（次の sync で中身を引き継ぐ）
     this.produced = {};        // 作った数の累計（item -> 個数）
+    this.destroyed = {};       // 焼却炉で消した数の累計（item -> 個数）
     this.ground = new Map();
     this.beltLines = [];
     this.lineOf = new Map();     // ベルトの id -> そのベルトが入っている線
@@ -323,7 +324,7 @@ export class Sim {
     for (const m of this.machines.values()) inMachines += pileTotal([m.input, m.output].filter(Boolean));
     for (const l of this.ground.values()) onGround += pileTotal(l);
     return { tick: this.tick, seconds: this.seconds, onBelts, inContainers, inMachines, onGround,
-             produced: { ...this.produced } };
+             produced: { ...this.produced }, destroyed: { ...this.destroyed } };
   }
 
   /** 保存用。建物の id は保存しないので、中身は座標で持つ。 */
@@ -345,6 +346,7 @@ export class Sim {
       splitters: [...this.splitState].filter(([, s]) => s.next !== 'back')
         .map(([id, s]) => ({ ...at(id), next: s.next })),
       produced: { ...this.produced },
+      destroyed: { ...this.destroyed },
       ground: [...this.ground].filter(([, l]) => l.length).map(([k, l]) => {
         const { x, y } = parseKey(k);
         return { x, y, stacks: copy(l) };
@@ -384,6 +386,7 @@ export class Sim {
       if (b && sim.splitState.has(b.id) && (e.next === 'back' || e.next === 'front')) sim.splitState.get(b.id).next = e.next;
     }
     sim.produced = { ...(data.produced || {}) };
+    sim.destroyed = { ...(data.destroyed || {}) };
     for (const e of data.ground || []) sim.ground.set(key(e.x, e.y), e.stacks.map(s => ({ ...s })));
     // 前の版で保存した、ベルトの下に残った床の物もベルトに載せる
     world.forEach(b => { if (sim.belts.has(b.id)) sim.pickUpGround(b); });

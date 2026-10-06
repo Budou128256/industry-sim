@@ -7,7 +7,7 @@
 import { DELTA, footprint, key, rotatedSize } from '../core/grid.js';
 import { minerOutput, minerTargets } from '../core/miner.js';
 import { collectorArea, collectorDef, collectorOutput } from '../core/collector.js';
-import { craftTicks, machineDef, machineOutputCell, recipeFor } from '../core/machine.js';
+import { cycleTicks, machineDef, machineOutputCell } from '../core/machine.js';
 import { TICK_HZ } from '../core/sim.js';
 
 export class Renderer {
@@ -286,8 +286,8 @@ export class Renderer {
     const w = size.width * t, h = size.height * t;
     if (m.input) this.drawStack(b.x, b.y + size.height - 1, [m.input], 'ground-like');
     if (m.output) this.drawStack(b.x + size.width - 1, b.y + size.height - 1, [m.output], 'container');
-    const recipe = m.input && recipeFor(this.registry, b.type, m.input.item);
-    const pct = recipe ? m.progress / craftTicks(recipe, TICK_HZ) : 0;
+    const ticks = cycleTicks(this.registry, b, m, TICK_HZ);
+    const pct = ticks ? m.progress / ticks : 0;
     ctx.fillStyle = '#0b0e15';
     ctx.fillRect(px + 4, py + h - 7, w - 8, 4);
     ctx.fillStyle = m.state === '出力が満杯' ? '#f87171' : '#4ade80';

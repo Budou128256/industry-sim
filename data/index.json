@@ -6,13 +6,18 @@
     "iron-plate",
     "copper-plate",
     "wood",
-    "plank"
+    "plank",
+    "scrap-a",
+    "scrap-b",
+    "scrap-part"
   ],
   "buildings": [
     "miner",
     "furnace",
     "processor",
     "table-saw",
+    "incinerator",
+    "shredder",
     "belt",
     "splitter",
     "inserter",
@@ -24,6 +29,8 @@
   "recipes": [
     "iron-plate",
     "copper-plate",
-    "plank"
+    "plank",
+    "scrap-a",
+    "scrap-b"
   ]
 }

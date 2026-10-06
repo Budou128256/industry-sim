@@ -1,0 +1,15 @@
+{
+  "id": "scrap-b",
+  "name": "スクラップ用アイテムBを壊す(テスト)",
+  "inputs": {
+    "scrap-b": 1
+  },
+  "outputs": {
+    "copper-plate": 1,
+    "scrap-part": 2
+  },
+  "craftTime": 10,
+  "machines": [
+    "shredder"
+  ]
+}
