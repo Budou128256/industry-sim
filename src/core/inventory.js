@@ -1,13 +1,16 @@
 /* アイテムの入れ物。保管箱のスロットと、「スタックの列」（ベルト・床）の共通処理。
  *
- * スタックは { item, count }。1スタックに入る数はアイテムの stackSize（data/items）。
+ * スタックは { item, count }。1スタックに入る数は、アイテムの stackSize（data/items）。
+ * 書いていなければ、ゲームごとの既定値（data/game.json の defaults.stackSize）。
  * ここは状態を持たない関数だけ。持ち主は sim.js。
  */
 
 /** そのアイテムの1スタックの上限。 */
 export function stackLimit(registry, item) {
   const def = registry.item(item);
-  return (def && def.stackSize) || 100;
+  if (def && def.stackSize) return def.stackSize;
+  const d = registry.game && registry.game.defaults;
+  return (d && d.stackSize) || 100;
 }
 
 /* ---------- 保管箱（スロット） ---------- */

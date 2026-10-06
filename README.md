@@ -65,7 +65,8 @@ index.html        画面
 serve.py          開発用サーバ（標準ライブラリのみ）
 tests.html        テストの実行ページ
 bench.html        速さの測定ページ（大きな盤面を敷き詰めて時間を測る）
-data/             中身の定義（items / buildings / recipes）。index.json が目録
+data/             中身の定義（items / buildings / recipes）。index.json が目録。
+                  game.json がどのゲームに合わせた値か（1スタックの上限など、全体の決まり）
 examples/         見本の盤面（動きの確認用。普通のセーブデータ）。index.json が目録
 tools/            make_examples.mjs: 見本を作り直す（Node が要る。無くても examples/ はそのまま使える）
 src/

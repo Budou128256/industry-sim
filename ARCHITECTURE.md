@@ -19,7 +19,8 @@ my-application/          （手元のフォルダ名。GitHub では industry-si
 ├─ tests.html / bench.html  テストと速さの測定のページ
 ├─ serve.py              開発用の小さなサーバ（ESモジュールは file:// で動かないため）
 ├─ data/                 ★ データ駆動。ここを足すだけで中身が増える
-│   ├─ items/            アイテム定義
+│   ├─ game.json         どのゲームに合わせた値か・全体の既定値（1スタックの上限など）
+│   ├─ items/            アイテム定義（個別の値は game.json の既定値より優先）
 │   ├─ buildings/        建物定義（大きさ・能力）
 │   └─ recipes/          レシピ定義
 └─ src/

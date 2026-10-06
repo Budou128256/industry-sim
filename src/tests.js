@@ -18,6 +18,7 @@ import { splitStack, splitterAccepts } from './core/splitter.js';
 import { captureBlueprint, checkBlueprint, flipBlueprint, moveArea, pasteBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
 import { Engine } from './worker/engine.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
+import { stackLimit } from './core/inventory.js';
 
 const results = [];
 function test(name, fn) {
@@ -1270,6 +1271,13 @@ test('ベルト・アーム・保管箱の挙動が data に書いてある', ()
   ok(reg.building('wire') && reg.building('wire').layer === 'floor', '電線が床の層にない');
   ok(reg.building('inserter').power.needs && reg.building('miner').power.needs, 'アーム・採掘機が電気を要らない');
   ok(!reg.building('belt').power && !reg.building('furnace').power, 'ベルト・炉が電気を要る');
+});
+test('ゲームの設定（data/game.json）: 1スタックの上限は Core Keeper に合わせて 9999。アイテムに書けばそちらが優先', () => {
+  eq([reg.game.id, reg.game.defaults.stackSize], ['core-keeper', 9999]);
+  eq(stackLimit(reg, 'iron-ore'), 9999);
+  const r2 = { item: () => ({ id: 'x', stackSize: 50 }), game: reg.game };
+  eq(stackLimit(r2, 'x'), 50, 'アイテムの値が優先されない');
+  eq(stackLimit({ item: () => ({ id: 'y' }) }, 'y'), 100, 'game.json が無いときの既定値');
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {
