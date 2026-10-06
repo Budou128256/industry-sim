@@ -1,0 +1,192 @@
+{
+ "format": "industry-sim",
+ "version": 1,
+ "savedAt": "2026-10-06T00:00:00.000Z",
+ "world": {
+  "version": 1,
+  "width": 24,
+  "height": 12,
+  "buildings": [
+   {
+    "type": "generator",
+    "x": 2,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "miner",
+    "x": 3,
+    "y": 6,
+    "dir": "S"
+   },
+   {
+    "type": "miner",
+    "x": 4,
+    "y": 6,
+    "dir": "S"
+   },
+   {
+    "type": "miner",
+    "x": 5,
+    "y": 6,
+    "dir": "S"
+   },
+   {
+    "type": "wire",
+    "x": 6,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 7,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 8,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 9,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 10,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 11,
+    "y": 6,
+    "dir": "N"
+   },
+   {
+    "type": "belt",
+    "x": 3,
+    "y": 5,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 4,
+    "y": 5,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 5,
+    "y": 5,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 6,
+    "y": 5,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 7,
+    "y": 5,
+    "dir": "E"
+   },
+   {
+    "type": "inserter",
+    "x": 9,
+    "y": 5,
+    "dir": "W"
+   },
+   {
+    "type": "furnace",
+    "x": 10,
+    "y": 5,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 11,
+    "y": 5,
+    "dir": "W"
+   },
+   {
+    "type": "belt",
+    "x": 12,
+    "y": 5,
+    "dir": "E"
+   },
+   {
+    "type": "belt",
+    "x": 13,
+    "y": 5,
+    "dir": "E"
+   },
+   {
+    "type": "splitter",
+    "x": 14,
+    "y": 5,
+    "dir": "N"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 6,
+    "dir": "S"
+   },
+   {
+    "type": "belt",
+    "x": 14,
+    "y": 7,
+    "dir": "S"
+   }
+  ],
+  "resources": [
+   {
+    "x": 3,
+    "y": 7,
+    "item": "iron-ore"
+   },
+   {
+    "x": 4,
+    "y": 7,
+    "item": "iron-ore"
+   },
+   {
+    "x": 5,
+    "y": 7,
+    "item": "iron-ore"
+   }
+  ]
+ },
+ "sim": {
+  "version": 1,
+  "tick": 0,
+  "belts": [],
+  "containers": [],
+  "machines": [],
+  "miners": [],
+  "splitters": [],
+  "produced": {},
+  "ground": []
+ },
+ "name": "4. 全部つなげた小さな工場",
+ "note": "採掘機3台 → ベルト → 床 → アーム → 炉 → アーム → ベルト → スプリッター → 上下に分かれて床へ。採掘機は発電機の隣から電気をもらい、隣どうしで電気を渡す。炉は10秒に1枚なので、鉱石は炉の中（入力）に溜まっていく"
+}
