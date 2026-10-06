@@ -19,14 +19,15 @@
   aside{border-right:1px solid var(--line);background:var(--panel);
         overflow-y:auto;padding:10px 12px;min-height:0}
   main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
-  .bar{display:flex;gap:8px;align-items:center;padding:8px 12px;
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;
        border-bottom:1px solid var(--line);background:var(--panel)}
+  input[type=number]{width:58px;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit}
   select{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit}
   button{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
          border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit}
   button:hover{border-color:#4a5568}
   button.on{border-color:#d4b13f}
-  #board{flex:1;display:block;width:100%;height:100%;cursor:crosshair}
+  #board{flex:1 1 0;min-height:0;display:block;width:100%;cursor:crosshair}
   .group{color:var(--muted);font-size:12px;margin:10px 0 4px}
   .pal{display:flex;align-items:center;gap:8px;width:100%;margin-bottom:3px;
        border:1px solid transparent;background:transparent;text-align:left}
@@ -43,8 +44,9 @@
   .bp .mini{padding:2px 6px;font-size:11px;flex:none}
   .hint{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.8}
   .bar > *{flex:none;white-space:nowrap}
-  /* 長い文が入っても1行のまま（バーの高さが変わると盤面がずれる） */
-  #status{color:var(--muted);font-size:12.5px;margin-left:auto;flex:1 1 0;min-width:0;
+  /* 長い文が入っても1行のまま（バーの高さが変わると盤面がずれる）。
+     狭い画面ではボタンの後ろの行に回る（行数は画面の幅だけで決まり、文の長さでは変わらない） */
+  #status{color:var(--muted);font-size:12.5px;margin-left:auto;flex:1 1 0;min-width:280px;
           text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* カーソルを止めたときの詳細（app.js の showTip） */
   .tip{position:fixed;z-index:50;pointer-events:none;background:rgba(22,26,35,.96);border:1px solid var(--line);
@@ -147,6 +149,11 @@
       <button id="btnPower" class="on" title="電気の届く範囲を薄い黄色で塗る">電力表示</button>
       <button id="btnRotate">回転 (R)</button>
       <button id="btnClear">全消去</button>
+      <span class="sub" title="盤面の幅 x 高さ（マス）。左上はそのままで、右と下が広がる・縮む">盤面</span>
+      <input type="number" id="boardW" min="8" max="1024" step="1" aria-label="盤面の幅">
+      <span class="sub">x</span>
+      <input type="number" id="boardH" min="8" max="1024" step="1" aria-label="盤面の高さ">
+      <button id="btnResize" title="盤面の大きさを変える（8〜1024 マス）">大きさを変える</button>
       <button id="btnExport" title="盤面を .json ファイルに書き出す">書き出し</button>
       <button id="btnImport" title=".json ファイルから盤面を読み込む（今の盤面と入れ替わる）">読み込み</button>
       <input type="file" id="fileImport" accept=".json,application/json" hidden>

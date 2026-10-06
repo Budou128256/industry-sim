@@ -17,7 +17,7 @@ import { wireColors } from './render/renderer.js';
 import { splitStack, splitterAccepts } from './core/splitter.js';
 import { captureBlueprint, checkBlueprint, flipBlueprint, moveArea, pasteBlueprint, previewBlueprint, rectFrom, rotateBlueprint } from './core/blueprint.js';
 import { Engine } from './worker/engine.js';
-import { loadSave, makeSave } from './core/save.js';
+import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
 
 const results = [];
 function test(name, fn) {
@@ -1174,6 +1174,77 @@ test('エンジン: 保存して、全消去して、読み込むと元に戻る
   eng.handle({ id: 6, op: 'load', data: { format: 'other' } });
   ok(res(6).error, '読めないデータでエラーにならない');
   eq(eng.world.count, 2, '読めなかったのに盤面が変わった');
+});
+
+/* ---- 盤面の大きさ ---- */
+test('盤面を広げても、建物・中身・鉱脈・床の物・時間はそのまま', () => {
+  const w = simWorld(10, 10);
+  put(w, 'belt', 1, 1, 'E'); put(w, 'chest', 5, 5);
+  w.setResource(2, 2, 'ore');
+  const sim = new Sim(w, simReg);
+  sim.addItems(1, 1, 'ore', 3); sim.addItems(5, 5, 'plate', 4); sim.addItems(8, 8, 'ore', 2);
+  for (let i = 0; i < 7; i++) sim.step();
+  const r = resizeSave(w, sim, simReg, 30, 20);
+  eq([r.world.width, r.world.height, r.world.count, r.skipped], [30, 20, 2, 0]);
+  eq(r.sim.toJSON(), sim.toJSON());
+  eq(r.world.resourceAt(2, 2), 'ore');
+  ok(canPlace(r.world, simDefs.chest, 29, 19).ok, '広げた所に置けない');
+  eq([w.width, w.height], [10, 10], '元の World が変わった');
+});
+test('盤面を縮めると、はみ出す建物は中身ごと、はみ出す鉱脈・床の物も消える', () => {
+  const w = simWorld(20, 20);
+  put(w, 'belt', 1, 1, 'E'); put(w, 'chest', 18, 1); put(w, 'smelter', 9, 4);   // 2x2 は (9..10, 4..5)
+  w.setResource(2, 2, 'ore'); w.setResource(19, 19, 'ore');
+  const sim = new Sim(w, simReg);
+  sim.addItems(18, 1, 'plate', 4); sim.addItems(1, 3, 'ore', 2); sim.addItems(15, 7, 'ore', 5);
+  eq(countOutside(w, 10, 20), 2, '箱と、半分はみ出す 2x2 を数えていない');
+  eq(countOutside(w, 11, 11), 1);
+  const r = resizeSave(w, sim, simReg, 10, 20);
+  eq([r.world.count, r.skipped], [1, 2]);
+  eq(r.world.resourceAt(2, 2), 'ore');
+  eq(r.world.resourceAt(19, 19) || null, null);
+  eq(r.sim.totals().onGround, 2, '外の床の物が残った / 中の床の物が消えた');
+  eq(r.sim.totals().inContainers, 0);
+});
+test('盤面の大きさは 8〜1024 の整数だけ', () => {
+  eq(checkSize(8, 1024), null);
+  ok(checkSize(7, 10), '小さすぎるのに通った');
+  ok(checkSize(10, 1025), '大きすぎるのに通った');
+  ok(checkSize(10.5, 10), '整数でないのに通った');
+  ok(checkSize('20', 10), '文字なのに通った');
+});
+test('エンジン: 下見では変えず、変えた後の全消去も新しい大きさのまま', () => {
+  const sent = [];
+  const eng = new Engine(simReg, m => sent.push(m), { width: 20, height: 10 });
+  const res = id => sent.find(m => m.re === id);
+  eng.handle({ id: 1, op: 'place', type: 'belt', cells: [{ x: 1, y: 1, dir: 'E' }, { x: 15, y: 1, dir: 'E' }] });
+  const v0 = eng.version;
+  eng.handle({ id: 2, op: 'resize', width: 10, height: 10, dryRun: true });
+  eq(res(2).result, { lost: 1 });
+  eq([eng.world.width, eng.world.count, eng.version], [20, 2, v0], '下見なのに変わった');
+  eng.handle({ id: 3, op: 'resize', width: 10, height: 12 });
+  eq(res(3).result, { width: 10, height: 12, lost: 1, count: 1 });
+  eng.handle({ id: 4, op: 'resize', width: 3, height: 12 });
+  ok(res(4).error, '小さすぎるのにエラーにならない');
+  eq(eng.world.width, 10);
+  eng.handle({ id: 5, op: 'clear' });
+  eq([eng.world.width, eng.world.height], [10, 12], '全消去で元の大きさに戻った');
+  eng.handle({ op: 'ack' });
+  const snap = sent.filter(m => m.type === 'view').pop().snap;
+  eq([snap.width, snap.height], [10, 12]);
+});
+
+test('元に戻す: 盤面の大きさの変更を戻すと、消えた建物も中身ごと戻る', () => {
+  const { eng, call } = undoEngine();
+  call('place', { type: 'chest', cells: [{ x: 15, y: 5 }] });
+  eng.sim.addItems(15, 5, 'plate', 6);
+  call('resize', { width: 10, height: 10 });
+  eq(eng.world.count, 0);
+  eq(call('undo').label, '大きさの変更');
+  eq([eng.world.width, eng.world.count], [20, 1]);
+  eq(total(eng.sim.contentsAt(15, 5).container.slots.filter(Boolean)), 6);
+  call('redo');
+  eq([eng.world.width, eng.world.count], [10, 0]);
 });
 
 /* ---- registry（データを実際に読む） ---- */

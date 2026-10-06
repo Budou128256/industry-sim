@@ -12,7 +12,7 @@ import { World } from '../core/world.js';
 import { Sim, TICK_HZ } from '../core/sim.js';
 import { PathPlacer, canPlace, place, removeAt, rotateAt } from '../core/placement.js';
 import { makeSnapshot } from '../core/snapshot.js';
-import { loadSave, makeSave } from '../core/save.js';
+import { checkSize, countOutside, loadSave, makeSave, resizeSave } from '../core/save.js';
 import { key } from '../core/grid.js';
 import { buildingsInside, captureBlueprint, checkBlueprint, moveArea, pasteBlueprint } from '../core/blueprint.js';
 import { History, applyEntry } from '../core/history.js';
@@ -302,6 +302,29 @@ export class Engine {
   /** セーブデータを作る（Phase 6）。 */
   op_save() {
     return makeSave(this.world, this.sim);
+  }
+
+  /**
+   * 盤面の大きさを変える。左上は動かさず、右と下を広げる・縮める。
+   * dryRun なら変えずに、はみ出して消える建物の数だけ返す（画面が確認を出すため）。
+   */
+  op_resize({ width, height, dryRun = false }) {
+    const reason = checkSize(width, height);
+    if (reason) throw new Error(reason);
+    const lost = countOutside(this.world, width, height);
+    if (dryRun) return { lost };
+    const before = makeSave(this.world, this.sim);
+    const { world, sim } = resizeSave(this.world, this.sim, this.registry, width, height);
+    this.history.pushSnapshot('大きさの変更', before, makeSave(world, sim));   // 元に戻すと、消えた建物も中身ごと戻る
+    const wasRunning = this.running;
+    this.op_pause();
+    this.drag = null;
+    this.world = world;
+    this.sim = sim;
+    this.size = { width, height };
+    this.changed();
+    if (wasRunning) this.op_play();
+    return { width, height, lost, count: world.count };
   }
 
   /** セーブデータを読み込んで、今の盤面と入れ替える。形が違えばエラーで、今の盤面はそのまま。 */

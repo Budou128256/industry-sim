@@ -114,6 +114,8 @@ async function main() {
   updateSelButtons();
   refreshBlueprints();
   refreshExamples();
+  $('btnResize').onclick = resizeBoard;
+  for (const id of ['boardW', 'boardH']) $(id).onkeydown = e => { if (e.key === 'Enter') resizeBoard(); };
 
   $('btnExport').onclick = exportFile;
   $('btnImport').onclick = () => $('fileImport').click();
@@ -260,6 +262,41 @@ async function openExample(ex) {
     autosave();
   } catch (e) {
     status(`見本を開けません: ${e.message}`, true);
+  }
+}
+
+/* ---------- 盤面の大きさ ---------- */
+
+/** 入力された大きさに変える。はみ出して消える建物があれば先に確かめる。 */
+async function resizeBoard() {
+  const width = Number($('boardW').value), height = Number($('boardH').value);
+  const w = state.view.world;
+  if (width === w.width && height === w.height) { status(`盤面はもう ${width}x${height} です`); return; }
+  try {
+    const { lost } = await state.client.call('resize', { width, height, dryRun: true });
+    if (lost && !await askConfirm({
+      title: '盤面の大きさを変える', message: `${width}x${height} にすると、盤面の外になる建物 ${lost} 個が中身ごと消えます（元に戻すで戻せます）。`,
+      ok: '変える', danger: true,
+    })) {
+      showSize(w.width, w.height);
+      status('大きさを変えるのをやめました');
+      return;
+    }
+    const r = await state.client.call('resize', { width, height });
+    if (['boardW', 'boardH'].includes(document.activeElement.id)) document.activeElement.blur();   // 続けて Ctrl+Z などが盤面に届くように
+    status(`盤面を ${r.width}x${r.height} にしました` + (r.lost ? `（建物 ${r.lost} 個が消えました）` : ''));
+    autosave();
+  } catch (e) {
+    status(e.message, true);
+    showSize(w.width, w.height);
+  }
+}
+
+/** 大きさの入力欄に今の大きさを出す（入力中は触らない）。 */
+function showSize(width, height) {
+  for (const [id, v] of [['boardW', width], ['boardH', height]]) {
+    const el = $(id);
+    if (el && document.activeElement !== el) el.value = v;
   }
 }
 
@@ -905,7 +942,9 @@ async function inspect(x, y) {
 }
 
 function setView(snap) {
+  const old = state.view && state.view.world;
   state.view = { world: new ViewWorld(snap), sim: new ViewSim(snap) };
+  if (!old || old.width !== snap.width || old.height !== snap.height) showSize(snap.width, snap.height);
 }
 
 /** 画面に映る範囲が変わったら Worker に伝える（その範囲の写しが返ってくる）。 */
