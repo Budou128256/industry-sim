@@ -135,6 +135,22 @@ const EXAMPLES = [
       return b;
     },
   },
+  {
+    id: 'table-saw',
+    name: '5. 製材機',
+    note: '箱の木材をアームが製材機へ入れ、できた板を別のアームが右の箱へ移す。製材機は電気が要る（電線から）。'
+      + '下の段はアームと製材機に電気が届かず止まっている（赤い ×）。加工は1枚10秒',
+    build(reg) {
+      const b = board(reg, 14, 10);
+      b.put('generator', 1, 4).row('wire', 2, 7, 4);
+      b.put('chest', 3, 3).put('inserter', 4, 3, 'W').put('table-saw', 5, 3).put('inserter', 6, 3, 'W').put('chest', 7, 3);
+      b.items(3, 3, 'wood', 30);
+      // 電気の届かない製材機（電線とつながっていない）
+      b.put('chest', 3, 7).put('inserter', 4, 7, 'W').put('table-saw', 5, 7);
+      b.items(3, 7, 'wood', 10);
+      return b;
+    },
+  },
 ];
 
 const reg = loadRegistry();

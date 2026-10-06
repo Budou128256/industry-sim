@@ -1,0 +1,14 @@
+{
+  "id": "plank",
+  "name": "板(テスト)",
+  "inputs": {
+    "wood": 1
+  },
+  "outputs": {
+    "plank": 1
+  },
+  "craftTime": 10,
+  "machines": [
+    "table-saw"
+  ]
+}

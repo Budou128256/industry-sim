@@ -1279,6 +1279,22 @@ test('ゲームの設定（data/game.json）: 1スタックの上限は Core Kee
   eq(stackLimit(r2, 'x'), 50, 'アイテムの値が優先されない');
   eq(stackLimit({ item: () => ({ id: 'y' }) }, 'y'), 100, 'game.json が無いときの既定値');
 });
+test('製材機（data を足しただけの機械）: 電気が届けば木材を板にし、炉では木材を扱えない', () => {
+  const saw = reg.building('table-saw');
+  ok(saw && saw.machine && saw.power.needs, '製材機が無い・電気を要らない');
+  const w = new World({ width: 6, height: 3 });
+  place(w, reg.building('generator'), 0, 0, 'N');
+  place(w, saw, 1, 0, 'N');                        // 発電機の隣
+  place(w, saw, 4, 2, 'N');                        // 電気が届かない
+  place(w, reg.building('furnace'), 3, 0, 'N');
+  const sim = new Sim(w, reg);
+  sim.addItems(1, 0, 'wood', 2); sim.addItems(4, 2, 'wood', 2); sim.addItems(3, 0, 'wood', 1);
+  for (let i = 0; i < 20 * TICK_HZ; i++) sim.step();
+  eq(sim.contentsAt(1, 0).machine.output, { item: 'plank', count: 2 });
+  eq(sim.contentsAt(4, 2).machine.output, null, '電気が無いのに動いた');
+  eq(sim.contentsAt(3, 0).machine.input, null, '炉に木材が入った');
+  eq(sim.contentsAt(3, 0).ground, [{ item: 'wood', count: 1 }]);
+});
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {
     for (const id of Object.keys(r.inputs)) ok(reg.item(id), `${r.id} の材料 ${id} が無い`);

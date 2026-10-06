@@ -1,0 +1,19 @@
+{
+  "id": "table-saw",
+  "name": "製材機(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#8a6a3f",
+  "directional": false,
+  "tags": [
+    "production"
+  ],
+  "note": "電気で木材を板にする（Core Keeper の Table Saw）。炉と同じく入力1スタック・出力1スタックで、材料と製品はアームで出し入れする",
+  "machine": {},
+  "power": {
+    "needs": true,
+    "conducts": true
+  }
+}

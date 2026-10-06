@@ -4,12 +4,15 @@
     "copper-ore",
     "coal",
     "iron-plate",
-    "copper-plate"
+    "copper-plate",
+    "wood",
+    "plank"
   ],
   "buildings": [
     "miner",
     "furnace",
     "processor",
+    "table-saw",
     "belt",
     "splitter",
     "inserter",
@@ -19,6 +22,7 @@
   ],
   "recipes": [
     "iron-plate",
-    "copper-plate"
+    "copper-plate",
+    "plank"
   ]
 }

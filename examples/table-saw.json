@@ -1,0 +1,171 @@
+{
+ "format": "industry-sim",
+ "version": 1,
+ "savedAt": "2026-10-06T00:00:00.000Z",
+ "world": {
+  "version": 1,
+  "width": 14,
+  "height": 10,
+  "buildings": [
+   {
+    "type": "generator",
+    "x": 1,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 2,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 3,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 4,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 5,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 6,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "wire",
+    "x": 7,
+    "y": 4,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 3,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 4,
+    "y": 3,
+    "dir": "W"
+   },
+   {
+    "type": "table-saw",
+    "x": 5,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 6,
+    "y": 3,
+    "dir": "W"
+   },
+   {
+    "type": "chest",
+    "x": 7,
+    "y": 3,
+    "dir": "N"
+   },
+   {
+    "type": "chest",
+    "x": 3,
+    "y": 7,
+    "dir": "N"
+   },
+   {
+    "type": "inserter",
+    "x": 4,
+    "y": 7,
+    "dir": "W"
+   },
+   {
+    "type": "table-saw",
+    "x": 5,
+    "y": 7,
+    "dir": "N"
+   }
+  ],
+  "resources": []
+ },
+ "sim": {
+  "version": 1,
+  "tick": 0,
+  "belts": [],
+  "containers": [
+   {
+    "x": 3,
+    "y": 3,
+    "slots": [
+     {
+      "item": "wood",
+      "count": 30
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "x": 3,
+    "y": 7,
+    "slots": [
+     {
+      "item": "wood",
+      "count": 10
+     },
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   }
+  ],
+  "machines": [],
+  "miners": [],
+  "splitters": [],
+  "produced": {},
+  "ground": []
+ },
+ "name": "5. 製材機",
+ "note": "箱の木材をアームが製材機へ入れ、できた板を別のアームが右の箱へ移す。製材機は電気が要る（電線から）。下の段はアームと製材機に電気が届かず止まっている（赤い ×）。加工は1枚10秒"
+}
