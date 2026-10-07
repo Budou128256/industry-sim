@@ -67,9 +67,11 @@ export class World {
   /** 層ごとの占有表。 */
   layerMap(layer) { return layer === 'floor' ? this.floor : this.occupancy; }
 
-  /** 建物を1つ置く。重なりの判定は placement.js が先に行う前提。layer は 'object'（既定）か 'floor'。 */
-  add({ type, x, y, dir = 'N', size, layer = 'object' }) {
+  /** 建物を1つ置く。重なりの判定は placement.js が先に行う前提。layer は 'object'（既定）か 'floor'。
+   *  filter: アームが運ぶ物を1種類に絞る（アイテム id。無ければ全部運ぶ） */
+  add({ type, x, y, dir = 'N', size, layer = 'object', filter = null }) {
     const b = { id: nextId++, type, x, y, dir, size, layer };
+    if (filter) b.filter = filter;
     this.buildings.set(b.id, b);
     const occ = this.layerMap(layer);
     for (const c of footprint(x, y, size, dir)) occ.set(c.x, c.y, b.id);
@@ -124,7 +126,7 @@ export class World {
       version: 1,
       width: this.width,
       height: this.height,
-      buildings: [...this.buildings.values()].map(({ type, x, y, dir }) => ({ type, x, y, dir })),
+      buildings: [...this.buildings.values()].map(({ type, x, y, dir, filter }) => (filter ? { type, x, y, dir, filter } : { type, x, y, dir })),
       resources: (() => {
         const out = [];
         this.resources.forEach((x, y, item) => out.push({ x, y, item }));
@@ -139,7 +141,7 @@ export class World {
     for (const b of data.buildings || []) {
       const def = registry.building(b.type);
       if (!def) continue;                 // 知らない建物は黙って飛ばす（データが増減しても壊れない）
-      w.add({ type: b.type, x: b.x, y: b.y, dir: b.dir || 'N', size: def.size, layer: def.layer || 'object' });
+      w.add({ type: b.type, x: b.x, y: b.y, dir: b.dir || 'N', size: def.size, layer: def.layer || 'object', filter: b.filter || null });
     }
     for (const r of data.resources || []) w.setResource(r.x, r.y, r.item);
     return w;

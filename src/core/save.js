@@ -47,7 +47,7 @@ export function loadSave(data, registry) {
   for (const b of wd.buildings || []) {
     const def = registry.building(b.type);
     if (!def || !canPlace(world, def, b.x, b.y, b.dir || 'N').ok) { skipped++; continue; }
-    place(world, def, b.x, b.y, b.dir || 'N');
+    place(world, def, b.x, b.y, b.dir || 'N', { filter: b.filter });
   }
   for (const r of wd.resources || []) {
     if (r.x >= 0 && r.y >= 0 && r.x < world.width && r.y < world.height && registry.item(r.item)) {

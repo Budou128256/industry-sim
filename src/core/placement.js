@@ -22,10 +22,10 @@ export function canPlace(world, def, x, y, dir = 'N') {
 }
 
 /** 置く。置けなければ null を返す（例外にしない。連続設置で毎回止まると困る）。 */
-export function place(world, def, x, y, dir = 'N') {
+export function place(world, def, x, y, dir = 'N', { filter = null } = {}) {
   const check = canPlace(world, def, x, y, dir);
   if (!check.ok) return null;
-  return world.add({ type: def.id, x, y, dir, size: def.size, layer: def.layer || 'object' });
+  return world.add({ type: def.id, x, y, dir, size: def.size, layer: def.layer || 'object', filter: def.inserter ? filter : null });
 }
 
 /** そのマスの建物を取り除く。設置物を先に、無ければ床の層（電線など）。取り除いた建物を返す。 */
@@ -41,9 +41,9 @@ export function rotateAt(world, registry, x, y) {
   if (!def || !def.directional) return null;
   const dir = rotateCW(b.dir);
   world.remove(b);
-  const placed = place(world, def, b.x, b.y, dir);
+  const placed = place(world, def, b.x, b.y, dir, { filter: b.filter });
   if (!placed) {                       // 回すと入らない（長方形の建物）なら元に戻す
-    world.add({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer });
+    world.add({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer, filter: b.filter });
     return null;
   }
   return placed;
@@ -78,9 +78,9 @@ export function turnTo(world, registry, b, dir) {
   if (b.dir === dir) return b;
   const def = registry.building(b.type);
   world.remove(b);
-  const placed = place(world, def, b.x, b.y, dir);
+  const placed = place(world, def, b.x, b.y, dir, { filter: b.filter });
   if (!placed) {
-    world.add({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer });
+    world.add({ type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer, filter: b.filter });
     return null;
   }
   return placed;

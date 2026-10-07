@@ -226,7 +226,17 @@
   ],
   "resources": [
    {
+    "x": 4,
+    "y": 4,
+    "item": "iron-ore"
+   },
+   {
     "x": 5,
+    "y": 4,
+    "item": "iron-ore"
+   },
+   {
+    "x": 15,
     "y": 4,
     "item": "iron-ore"
    },
@@ -236,8 +246,43 @@
     "item": "iron-ore"
    },
    {
+    "x": 26,
+    "y": 4,
+    "item": "iron-ore"
+   },
+   {
     "x": 27,
     "y": 4,
+    "item": "iron-ore"
+   },
+   {
+    "x": 4,
+    "y": 5,
+    "item": "iron-ore"
+   },
+   {
+    "x": 5,
+    "y": 5,
+    "item": "iron-ore"
+   },
+   {
+    "x": 15,
+    "y": 5,
+    "item": "iron-ore"
+   },
+   {
+    "x": 16,
+    "y": 5,
+    "item": "iron-ore"
+   },
+   {
+    "x": 26,
+    "y": 5,
+    "item": "iron-ore"
+   },
+   {
+    "x": 27,
+    "y": 5,
     "item": "iron-ore"
    }
   ]

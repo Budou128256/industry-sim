@@ -24,13 +24,17 @@
     "inserter",
     "collector",
     "chest",
+    "large-chest",
     "generator",
     "wire",
     "lever",
     "pressure-plate",
     "logic-circuit",
     "delay-circuit",
-    "cross-circuit"
+    "cross-circuit",
+    "i-circuit",
+    "l-circuit",
+    "t-circuit"
   ],
   "recipes": [
     "iron-plate",

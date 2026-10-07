@@ -12,12 +12,13 @@ import { Registry } from './core/registry.js';
 import { canPlace, pathCells } from './core/placement.js';
 import { rotateCW } from './core/grid.js';
 import { TICK_HZ } from './core/sim.js';
+import { lineRecipes } from './core/linegen.js';
 import { Renderer } from './render/renderer.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
 import { SimClient } from './client.js';
 import { listLocal, loadLocal, removeLocal, saveLocal } from './storage.js';
-import { askConfirm, askText } from './ui/dialog.js';
+import { askChoice, askConfirm, askText } from './ui/dialog.js';
 import {
   BLUEPRINT_FORMAT, buildingsInside, captureBlueprint, checkBlueprint, flipBlueprint, previewBlueprint, rectFrom, rotateBlueprint,
 } from './core/blueprint.js';
@@ -108,6 +109,11 @@ async function main() {
   $('btnFlipH').onclick = () => onCommand({ type: 'flip', axis: 'h' });
   $('btnFlipV').onclick = () => onCommand({ type: 'flip', axis: 'v' });
   $('btnSaveBp').onclick = saveBlueprint;
+  $('cgN').onchange = drawCircuitTable;
+  $('btnGen').onclick = genCircuit;
+  drawCircuitTable();
+  setupLineForm();
+  $('btnLine').onclick = genLine;
   $('btnFit').onclick = () => onCommand({ type: 'fit' });
   $('btnZoomIn').onclick = () => { state.renderer.zoomCenter(1.25); onCommand({ type: 'redraw' }); };
   $('btnZoomOut').onclick = () => { state.renderer.zoomCenter(1 / 1.25); onCommand({ type: 'redraw' }); };
@@ -240,6 +246,154 @@ async function refreshExamples() {
     box.appendChild(el);
   }
   if (!list.length) box.innerHTML = '<div class="sub">（examples/ が見つかりません）</div>';
+}
+
+/* ---------- 回路の自動生成 ---------- */
+
+const CG_NAMES = ['A', 'B', 'C'];
+
+/** 入力の数に合わせて、組み合わせの表（どの組み合わせで電気を出すか）を描き直す。 */
+function drawCircuitTable() {
+  const n = Number($('cgN').value);
+  const box = $('cgTable');
+  let html = '<tr>' + CG_NAMES.slice(0, n).map(c => `<th>${c}</th>`).join('') + '<th>出す</th></tr>';
+  for (let r = 0; r < 1 << n; r++) {
+    html += '<tr>';
+    for (let i = 0; i < n; i++) html += `<td>${(r >> (n - 1 - i)) & 1 ? '入' : '切'}</td>`;
+    html += `<td><input type="checkbox" data-r="${r}"></td></tr>`;
+  }
+  box.innerHTML = html;
+  $('cgList').innerHTML = '';
+  $('cgText').textContent = '';
+}
+
+async function genCircuit() {
+  const n = Number($('cgN').value);
+  const table = [];
+  for (let r = 0; r < 1 << n; r++) table.push(!!$('cgTable').querySelector(`input[data-r="${r}"]`).checked);
+  if (!table.some(Boolean)) { status('電気を出したい組み合わせに、1つ以上印を付けてください', true); return; }
+  $('btnGen').disabled = true;
+  $('cgText').textContent = '作っています…（型ごとに作って全部の組み合わせを確かめ、「建物が最少」と「見てわかりやすい」を選んでいます）';
+  $('cgList').innerHTML = '';
+  try {
+    const res = await state.client.call('genCircuit', { n, table });
+    $('cgText').textContent = `式: ${res.text}`;
+    showCircuitList(res, n);
+  } catch (e) {
+    $('cgText').textContent = '';
+    status(`回路を作れません: ${e.message}`, true);
+  } finally {
+    $('btnGen').disabled = false;
+  }
+}
+
+function showCircuitList(res, n) {
+  const box = $('cgList');
+  box.innerHTML = '';
+  if (!res.candidates.length) {
+    box.innerHTML = '<div class="sub">この条件では、どの型でも正しく動く配置を作れませんでした</div>';
+    return;
+  }
+  res.candidates.forEach((c, i) => {
+    const el = document.createElement('button');
+    el.className = 'pal cand';
+    el.title = 'クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）';
+    el.innerHTML = '<span class="n"></span><span class="sz"></span>';
+    el.querySelector('.n').textContent = c.kinds.join('・');
+    el.querySelector('.sz').textContent = `${c.width}×${c.height}=${c.area}・${c.count}個・曲がり${c.bends}`;
+    el.title = `${c.patternName}。論理回路 ${c.gates} 個。クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）`;
+    el.onclick = () => {
+      for (const b of box.querySelectorAll('.cand')) b.classList.toggle('on', b === el);
+      enterPaste(c.blueprint);
+      const ins = c.input.map((p, k) => `${CG_NAMES[k]}=(${p.x},${p.y})`).join(' ');
+      status(`${c.kinds.join('・')}: ${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・電線の曲がり角 ${c.bends}。設計図の中で、レバー ${ins}、出力の電線 (${c.output.x},${c.output.y})。クリックで貼り付け`);
+    };
+    box.appendChild(el);
+  });
+  status(`${res.candidates.length} 通りの配置ができました（面積の小さい順、同じなら置く数の少ない順）。クリックで下見できます`);
+}
+
+/* ---- 機械の自動配置 ---- */
+
+const nameOf = id => ((state.registry.building(id) || state.registry.item(id) || state.registry.recipe(id) || {}).name || id);
+
+/** 作る物・機械の選び肢を作る。材料はいつも材料の箱から（ユーザーの判断 2026-10-07）。 */
+function setupLineForm() {
+  const recipes = lineRecipes(state.registry);
+  const rs = $('lgRecipe');
+  rs.innerHTML = '';
+  for (const r of recipes) {
+    const o = document.createElement('option');
+    o.value = r.id; o.textContent = `${nameOf(r.id)}（材料: ${nameOf(r.input)}）`;
+    rs.appendChild(o);
+  }
+  const sync = () => {
+    const r = recipes.find(x => x.id === rs.value);
+    if (!r) return;
+    const ms = $('lgMachine'), keep = ms.value;
+    ms.innerHTML = '';
+    for (const m of r.machines) { const o = document.createElement('option'); o.value = m; o.textContent = nameOf(m); ms.appendChild(o); }
+    if (r.machines.includes(keep)) ms.value = keep;
+    $('lgList').innerHTML = ''; $('lgText').textContent = '';
+  };
+  rs.onchange = sync;
+  sync();
+}
+
+async function genLine() {
+  const opts = {
+    recipe: $('lgRecipe').value, machine: $('lgMachine').value,
+    count: Math.max(1, Math.min(16, Number($('lgCount').value) || 1)),
+  };
+  $('lgCount').value = opts.count;
+  $('btnLine').disabled = true;
+  $('lgText').textContent = '作っています…（型ごとに並べ、電気をつなぎ、動かして出来高を確かめています）';
+  $('lgList').innerHTML = '';
+  try {
+    const res = await state.client.call('genLine', opts);
+    const r = state.registry.recipe(opts.recipe);
+    $('lgText').textContent = `目標: ${nameOf(opts.recipe)} 毎分 ${fmt(res.target)} 個（${nameOf(opts.machine)} ${opts.count} 台。1台 ${r.craftTime} 秒で1回）。材料は毎分 ${fmt(res.need)} 個`;
+    showLineList(res, opts);
+  } catch (e) {
+    $('lgText').textContent = '';
+    status(`配置を作れません: ${e.message}`, true);
+  } finally {
+    $('btnLine').disabled = false;
+  }
+}
+
+const fmt = v => (Math.round(v * 10) / 10).toString();
+
+function showLineList(res, opts) {
+  const box = $('lgList');
+  box.innerHTML = '';
+  if (!res.candidates.length) {
+    box.innerHTML = '<div class="sub">どの型でも、目標の出来高で動く配置を作れませんでした</div>';
+  }
+  res.candidates.forEach((c, i) => {
+    const el = document.createElement('button');
+    el.className = 'pal cand';
+    el.innerHTML = '<span class="n"></span><span class="sz"></span>';
+    el.querySelector('.n').textContent = `${i + 1}. ${c.patternName}`;
+    const parts = [`${c.width}×${c.height}=${c.area}`, `${c.count}個`];
+    parts.push(`発電機${c.generators}`);
+    el.querySelector('.sz').textContent = parts.join('・');
+    el.title = `動かして測った出来高: 毎分 ${fmt(c.perMin)} 個。クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）`;
+    el.onclick = () => {
+      for (const b of box.querySelectorAll('.cand')) b.classList.toggle('on', b === el);
+      enterPaste(c.blueprint);
+      const where = `左の辺の材料の箱に ${nameOf(Object.keys(state.registry.recipe(opts.recipe).inputs)[0])} を入れてください`;
+      status(`${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・毎分 ${fmt(c.perMin)} 個（測定）。${where}。製品は左下の出口の箱へ。クリックで貼り付け`);
+    };
+    box.appendChild(el);
+  });
+  for (const r of res.rejected) {
+    const d = document.createElement('div');
+    d.className = 'sub';
+    d.textContent = `× ${r.patternName}: ${r.why}（毎分 ${fmt(r.perMin || 0)} 個）`;
+    box.appendChild(d);
+  }
+  if (res.candidates.length) status(`${res.candidates.length} 通りの配置ができました（面積の小さい順、同じなら置く数の少ない順）。クリックで下見できます`);
 }
 
 /** 見本の盤面を開く（今の盤面と入れ替わる）。中身は普通のセーブデータ。 */
@@ -472,8 +626,9 @@ function onCommand(cmd) {
     }
     case 'remove': {
       if (paint) {
-        state.client.call('resource', { item: null, cells: [{ x: cmd.x, y: cmd.y }] })
-          .then(() => status(`(${cmd.x}, ${cmd.y}) の鉱脈を消しました`));
+        const cells = veinCells([{ x: cmd.x, y: cmd.y }]);
+        state.client.call('resource', { item: null, cells })
+          .then(() => status(`(${cells[0].x}, ${cells[0].y}) からの ${veinSize()}x${veinSize()} の鉱脈を消しました`));
         break;
       }
       state.client.call('remove', { x: cmd.x, y: cmd.y })
@@ -668,6 +823,7 @@ async function commitPaste(cell, ctrl) {
   if (r.replaced) notes.push(`上書きで ${r.replaced} 個を撤去（中身は床へ）`);
   if (r.same) notes.push(`同じ物がもうある ${r.same} 個はそのまま`);
   if (r.skipped) notes.push(`重なる・盤面の外の ${r.skipped} 個は飛ばしました（Ctrl+クリックで上書き）`);
+  if (r.ores) notes.push(`鉱脈 ${r.ores} マスも置きました`);
   status(`建物 ${r.placed} 個を貼りました` + (notes.length ? `（${notes.join('、')}）` : '') + '。続けてクリックで貼れます', !!r.skipped);
 }
 
@@ -801,14 +957,31 @@ async function addItems(x, y) {
   status(`(${x}, ${y}) の${label}に ${itemName(item)} を ${ITEM_AMOUNT} 個`);
 }
 
+/** 鉱脈の大きさ（data/game.json の defaults.veinSize。Core Keeper は 2x2）。 */
+const veinSize = () => Math.max(1, (state.registry.game.defaults || {}).veinSize || 1);
+
+/** マスを、そのマスを含む鉱脈の塊（veinSize 四方。盤面に合わせて揃える）のマスに広げる。 */
+function veinCells(cells) {
+  const n = veinSize(), out = [], seen = new Set();
+  for (const c of cells) {
+    const x0 = Math.floor(c.x / n) * n, y0 = Math.floor(c.y / n) * n;
+    for (let dy = 0; dy < n; dy++) for (let dx = 0; dx < n; dx++) {
+      const k = `${x0 + dx},${y0 + dy}`;
+      if (!seen.has(k)) { seen.add(k); out.push({ x: x0 + dx, y: y0 + dy }); }
+    }
+  }
+  return out;
+}
+
 async function setResource(cells, quiet = false) {
   const item = $('itemSel').value;
+  cells = veinCells(cells);
   const { ok } = await state.client.call('resource', { item, cells, group: quiet });   // ドラッグの続きは1回の操作にまとめる
   if (!ok) {
     status(`${itemName(item)} は鉱脈になりません（data/items で resource: true のものだけ）`, true);
     return;
   }
-  if (!quiet) status(`(${cells[0].x}, ${cells[0].y}) に ${itemName(item)} の鉱脈`);
+  if (!quiet) status(`(${cells[0].x}, ${cells[0].y}) から ${veinSize()}x${veinSize()} に ${itemName(item)} の鉱脈`);
 }
 
 function itemName(id) {
@@ -914,6 +1087,7 @@ function tipHTML(cell, c) {
   }
   if (c.miner) out += `<div class="sec">状態: ${esc(c.miner.state)}</div>`;
   if (c.device) out += `<div class="sec">状態: ${esc(c.device.state)}</div>`;
+  if (b && b.filter) out += `<div class="sec">フィルタ: ${esc(itemName(b.filter))} だけ運ぶ</div>`;
   if (c.ground && c.ground.length) out += stacksHTML('床', c.ground);
   if (c.resource) out += `<div class="sec">鉱脈: ${esc(itemName(c.resource))}</div>`;
   if (c.wire) out += `<div class="sec">床の層: ${esc(state.registry.building(c.wire).name)}</div>`;
@@ -931,6 +1105,8 @@ async function inspect(x, y) {
     const { on } = await state.client.call('toggle', { x, y });
     if (on !== null) { status(`(${hit.x}, ${hit.y}) ${hitDef.name}を${on ? '入れました（電気を通す）' : '切りました（電気を通さない）'}`); return; }
   }
+  // アームはクリックでフィルタ（運ぶ物を1種類に絞る）を選ぶ
+  if (hitDef && hitDef.inserter) { await chooseFilter(hit); return; }
   const c = await state.client.call('inspect', { x, y });
   const parts = [];
   if (c.belt && c.belt.length) parts.push(`ベルト上: ${describe(c.belt)}`);
@@ -953,6 +1129,19 @@ async function inspect(x, y) {
   const def = state.registry.building(b.type);
   status(`(${b.x}, ${b.y}) ${def.name}${def.directional ? ` / 向き ${b.dir}` : ''}`
     + (extra || `${def.note ? ` — ${def.note}` : ''}`));
+}
+
+/** アームのフィルタを選ぶ窓。 */
+async function chooseFilter(b) {
+  const options = [{ value: null, label: '（全部運ぶ）' }];
+  for (const it of state.registry.items.values()) options.push({ value: it.id, label: it.name || it.id });
+  const v = await askChoice({
+    title: 'アームのフィルタ', options, value: b.filter || null, ok: '決める',
+    message: `(${b.x}, ${b.y}) のアームが運ぶ物を1種類に絞ります（Core Keeper の Robot Arm のフィルタ）。絞ると、ほかの物は取りません`,
+  });
+  if (v === undefined) return;
+  const r = await state.client.call('filter', { x: b.x, y: b.y, item: v });
+  if (r.ok) status(v ? `(${b.x}, ${b.y}) のアームは ${itemName(v)} だけ運びます` : `(${b.x}, ${b.y}) のアームは全部運びます`);
 }
 
 function setView(snap) {

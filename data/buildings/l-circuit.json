@@ -1,0 +1,22 @@
+{
+  "id": "l-circuit",
+  "name": "L回路(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#6a7a5a",
+  "directional": true,
+  "tags": [
+    "power"
+  ],
+  "note": "直角（正面と右）にだけ電気を通す。ほかの2辺の線とはつながらない",
+  "signal": {
+    "type": "path",
+    "arms": [
+      "N",
+      "E"
+    ]
+  },
+  "power": {}
+}

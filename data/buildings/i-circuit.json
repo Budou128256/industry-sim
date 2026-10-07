@@ -1,0 +1,22 @@
+{
+  "id": "i-circuit",
+  "name": "I回路(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#6a7a5a",
+  "directional": true,
+  "tags": [
+    "power"
+  ],
+  "note": "まっすぐ（正面と背面）にだけ電気を通す。横の線とはつながらないので、違う線を隣に並べられる",
+  "signal": {
+    "type": "path",
+    "arms": [
+      "N",
+      "S"
+    ]
+  },
+  "power": {}
+}

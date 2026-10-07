@@ -1,0 +1,17 @@
+{
+  "id": "large-chest",
+  "name": "大きい保管箱(テスト)",
+  "size": {
+    "width": 1,
+    "height": 2
+  },
+  "color": "#9a6a3c",
+  "directional": true,
+  "tags": [
+    "storage"
+  ],
+  "note": "1x2 の保管箱（ユーザーの指摘: Core Keeper の保管箱には 1x1 と 1x2 がある）。枠の数は資料で見つからず、仮に 1x1 の倍の 36。R で縦・横を回せる",
+  "container": {
+    "slots": 36
+  }
+}

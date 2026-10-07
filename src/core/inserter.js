@@ -10,6 +10,8 @@
  *   - 置き先がベルトなら、その上に載る（何スタックでも載る）
  *   - 置き先が盤面の外なら動かない
  *   - data の power.needs があれば、電気が届いていないと動かない
+ *   - フィルタ（建物の filter。Core Keeper の Robot Arm の「can be set to pick a single type of object」）を
+ *     決めたアームは、その種類の物だけを取る（https://corekeeper.atma.gg/en/Robot_Arm 、2026-10-07 に確認）
  */
 
 import { DELTA, OPPOSITE, inBounds } from './grid.js';
@@ -34,26 +36,32 @@ export function inserterCells(b) {
   };
 }
 
-/** そのマスから1スタック取り出す。取れなければ null。 */
-function takeFrom(sim, cell, max) {
+/** そのマスから1スタック取り出す。filter があればその種類だけ。取れなければ null。 */
+function takeFrom(sim, cell, max, filter = null) {
+  const ok = st => st && (!filter || st.item === filter);
   const b = sim.world.at(cell.x, cell.y);
   if (b && sim.belts.has(b.id)) {
     const list = sim.belts.get(b.id);
-    if (list.length) return takePart(list, 0, max);
+    const i = list.findIndex(ok);
+    if (i >= 0) return takePart(list, i, max);
   } else if (b && sim.containers.has(b.id)) {
     const ch = sim.containers.get(b.id);
-    const top = containerPeek(ch);
+    const top = filter ? ch.slots.map((st, slot) => (ok(st) ? { ...st, slot } : null)).find(Boolean) : containerPeek(ch);
     if (top) {
       const got = containerTake(ch, top.slot, Math.min(max, top.count));
       return { item: top.item, count: got };
     }
   } else if (b && sim.machines.has(b.id)) {
-    const got = machineTake(sim.machines.get(b.id), max);
-    if (got) return got;
+    const m = sim.machines.get(b.id);
+    if (!filter || ok(m.output)) {
+      const got = machineTake(m, max);
+      if (got) return got;
+    }
   }
   const ground = sim.groundAt(cell.x, cell.y);
-  if (ground && ground.length) {
-    const got = takePart(ground, 0, max);
+  const gi = ground ? ground.findIndex(ok) : -1;
+  if (gi >= 0) {
+    const got = takePart(ground, gi, max);
     if (!ground.length) sim.ground.delete(sim.cellKey(cell.x, cell.y));
     return got;
   }
@@ -95,7 +103,7 @@ export function stepInserters(sim) {
     const { width, height } = sim.world;
     if (!inBounds(from.x, from.y, width, height) || !inBounds(to.x, to.y, width, height)) continue;
     const max = typeof def.amount === 'number' ? def.amount : Infinity;
-    const got = takeFrom(sim, from, max);
+    const got = takeFrom(sim, from, max, b.filter || null);
     if (!got || got.count <= 0) continue;
     const spilled = deliverTo(sim, to, got.item, got.count);
     sim.busy.add(b.id);

@@ -15,6 +15,8 @@ import { makeSnapshot } from '../core/snapshot.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from '../core/save.js';
 import { key } from '../core/grid.js';
 import { toggleLever } from '../core/signal.js';
+import { generateCircuits } from '../core/circuitgen.js';
+import { generateLines } from '../core/linegen.js';
 import { buildingsInside, captureBlueprint, checkBlueprint, moveArea, pasteBlueprint } from '../core/blueprint.js';
 import { History, applyEntry } from '../core/history.js';
 
@@ -168,6 +170,33 @@ export class Engine {
     return { on };
   }
 
+  /** 回路の自動生成。table は長さ 2^n の真偽の並び（A が上の桁）。盤面は変えない。 */
+  op_genCircuit({ n, table }) {
+    const { all, ...res } = generateCircuits(this.registry, n, table);   // 画面には選んだ2つだけ送る
+    return res;
+  }
+
+  /** アームのフィルタを決める（item が null なら全部運ぶ）。アームでなければ { ok: false }。 */
+  op_filter({ x, y, item }) {
+    const b = this.world.at(x, y);
+    const def = b && this.registry.building(b.type);
+    if (!def || !def.inserter) return { ok: false };
+    if (item && !this.registry.item(item)) return { ok: false };
+    if ((b.filter || null) === (item || null)) return { ok: true, item: item || null };
+    // 置き直して記録する（元に戻す・やり直すにも乗る）。アームは中身を持たないので置き直しても困らない
+    this.record(item ? 'アームのフィルタ' : 'フィルタを外す', () => {
+      this.world.remove(b);
+      place(this.world, def, b.x, b.y, b.dir, { filter: item || null });
+    });
+    this.changed();
+    return { ok: true, item: item || null };
+  }
+
+  /** 機械の自動配置（生産ライン）。盤面は変えない。 */
+  op_genLine(opts) {
+    return generateLines(this.registry, opts);
+  }
+
   op_items({ x, y, item, count }) {
     const w = this.world;
     if (x < 0 || y < 0 || x >= w.width || y >= w.height) return { where: null };
@@ -250,7 +279,7 @@ export class Engine {
     const b = world.at(x, y);
     const wire = world.floorAt(x, y);
     return {
-      building: b && { type: b.type, x: b.x, y: b.y, dir: b.dir },
+      building: b && { type: b.type, x: b.x, y: b.y, dir: b.dir, filter: b.filter || null },
       unpowered: !!(b && sim.unpowered.has(b.id)),
       power: sim.power.get(key(x, y)) || 0,
       wire: wire && wire.type,

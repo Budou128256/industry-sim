@@ -25,7 +25,7 @@ export function makeSnapshot(world, sim, rect) {
   };
   if (x1 < x0 || y1 < y0) return snap;
   for (const b of world.buildingsIn(x0, y0, x1, y1)) {
-    snap.buildings.push({ id: b.id, type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer });
+    snap.buildings.push({ id: b.id, type: b.type, x: b.x, y: b.y, dir: b.dir, size: b.size, layer: b.layer, ...(b.filter ? { filter: b.filter } : {}) });
     if (sim.unpowered.has(b.id)) snap.unpowered.push(b.id);
     if (sim.busy.has(b.id)) snap.busy.push(b.id);
     if (sim.belts.has(b.id)) snap.belts.push([b.id, copy(sim.belts.get(b.id))]);

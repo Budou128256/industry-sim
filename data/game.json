@@ -3,9 +3,11 @@
   "name": "Core Keeper",
   "note": "このフォルダ（data/）の値は Core Keeper に合わせる。別のゲームに合わせるときは、このファイルの defaults と data/items などを差し替える。アイテムの JSON に書いた値は、ここの defaults より優先される",
   "defaults": {
-    "stackSize": 9999
+    "stackSize": 9999,
+    "veinSize": 2
   },
   "sources": {
-    "stackSize": "https://corekeeper.atma.gg/en/Chest （1枠に最大9999個。2026-10-06 に確認。2022年ごろは999だったという投稿もある）"
+    "stackSize": "https://corekeeper.atma.gg/en/Chest （1枠に最大9999個。2026-10-06 に確認。2022年ごろは999だったという投稿もある）",
+    "veinSize": "ユーザーの指摘（2026-10-07）: Core Keeper の鉱脈は 2x2 でだけできる"
   }
 }

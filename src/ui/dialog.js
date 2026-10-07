@@ -7,6 +7,7 @@
  * 使い方:
  *   if (await askConfirm({ title, message, ok: '削除', danger: true })) { ... }
  *   const name = await askText({ title, message, value: '' });   // やめたら null
+ *   const v = await askChoice({ title, message, options: [{ value, label }], value });   // やめたら undefined
  *
  * 窓が開いている間は .modal-open が body に付く。input.js はこの間キーを拾わない。
  */
@@ -23,10 +24,16 @@ export function askText({ title = '入力', message = '', value = '', placeholde
   return open({ title, message, ok, cancel, danger: false, input: { value, placeholder } });
 }
 
+/** 選び肢から1つ選んでもらう。やめたら undefined（選び肢の value に null も使える）。 */
+export async function askChoice({ title = '選ぶ', message = '', options = [], value = null, ok = 'OK', cancel = 'やめる' } = {}) {
+  const r = await open({ title, message, ok, cancel, danger: false, input: null, choice: { options, value } });
+  return r === false ? undefined : r;
+}
+
 /** 窓が開いているか。 */
 export function dialogOpen() { return !!current; }
 
-function open({ title, message, ok, cancel, danger, input }) {
+function open({ title, message, ok, cancel, danger, input, choice = null }) {
   if (current) current.finish(input ? null : false);      // 前の窓はやめた扱いで閉じる
   return new Promise(resolve => {
     const back = document.createElement('div');
@@ -36,6 +43,7 @@ function open({ title, message, ok, cancel, danger, input }) {
         <div class="title"></div>
         <div class="msg"></div>
         ${input ? '<input type="text" class="text">' : ''}
+        ${choice ? '<select class="text"></select>' : ''}
         <div class="btns"><button class="no"></button><button class="yes"></button></div>
       </div>`;
     back.querySelector('.title').textContent = title;
@@ -43,7 +51,16 @@ function open({ title, message, ok, cancel, danger, input }) {
     const yes = back.querySelector('.yes'), no = back.querySelector('.no');
     yes.textContent = ok; no.textContent = cancel;
     if (danger) yes.classList.add('danger');
-    const field = back.querySelector('.text');
+    const field = input ? back.querySelector('.text') : null;
+    const pick = choice ? back.querySelector('select') : null;
+    if (pick) {
+      choice.options.forEach((o, i) => {
+        const el = document.createElement('option');
+        el.value = String(i); el.textContent = o.label;
+        if (o.value === choice.value) el.selected = true;
+        pick.appendChild(el);
+      });
+    }
     if (field) {
       field.value = input.value || '';
       field.placeholder = input.placeholder || '';
@@ -60,7 +77,11 @@ function open({ title, message, ok, cancel, danger, input }) {
       if (prevFocus && prevFocus.focus) prevFocus.focus();
       resolve(result);
     };
-    const accept = () => { if (valid()) finish(field ? field.value.trim() : true); };
+    const accept = () => {
+      if (!valid()) return;
+      if (pick) finish(choice.options[Number(pick.value)].value);
+      else finish(field ? field.value.trim() : true);
+    };
     const reject = () => finish(field ? null : false);
     // 窓が開いている間のキーは、ここで止める（盤面の操作に届かないように）
     const onKey = e => {
@@ -81,7 +102,7 @@ function open({ title, message, ok, cancel, danger, input }) {
     document.body.appendChild(back);
     document.body.classList.add('modal-open');
     window.addEventListener('keydown', onKey, true);
-    (field || (danger ? no : yes)).focus();             // 消す操作は「やめる」に初めから合わせておく
+    (field || pick || (danger ? no : yes)).focus();             // 消す操作は「やめる」に初めから合わせておく
     if (field) field.select();
   });
 }

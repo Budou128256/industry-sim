@@ -4,7 +4,9 @@
  *   { format: 'industry-sim-blueprint', version: 1, name, width, height,
  *     buildings: [{ type, x, y, dir }] }      x, y は範囲の左上からの位置
  *
- * 写すのは建物（床の層の電線も）と向きだけ。中身（ベルトの上の物など）と鉱脈は写さない。
+ * 写すのは建物（床の層の電線も）と向き、アームのフィルタ（filter）だけ。中身（ベルトの上の物など）と鉱脈は写さない。
+ * ただし機械の自動配置（linegen.js）が作る設計図は、ドリルが掘る鉱脈を resources: [{ x, y, item }] に持つ
+ * （無くてもよい。貼ると鉱脈も置く。回す・反転にも付いてくる）。
  * 範囲に全部が入っている建物だけを写す（2x2 の建物が範囲の端で切れているときは写さない）。
  * **描画も DOM も知らない。**
  */
@@ -30,7 +32,7 @@ export function buildingsInside(world, rect) {
 /** 範囲を設計図にする。 */
 export function captureBlueprint(world, rect, name = '') {
   const buildings = buildingsInside(world, rect)
-    .map(b => ({ type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir }))
+    .map(b => ({ type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir, ...(b.filter ? { filter: b.filter } : {}) }))
     .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.type < b.type ? -1 : 1));
   return {
     format: BLUEPRINT_FORMAT, version: BLUEPRINT_VERSION, name,
@@ -49,7 +51,9 @@ export function rotateBlueprint(bp, registry) {
     // 占めていた矩形 [x..x+w-1] x [y..y+h-1] は、回すと左上が (H - y - h, x) になる
     return { ...b, x: H - b.y - h, y: b.x, dir: rotateCW(b.dir || 'N') };
   }).sort(byPos);
-  return { ...bp, width: bp.height, height: bp.width, buildings };
+  const out = { ...bp, width: bp.height, height: bp.width, buildings };
+  if (bp.resources) out.resources = bp.resources.map(r => ({ ...r, x: H - r.y - 1, y: r.x }));
+  return out;
 }
 
 const MIRROR = { h: { E: 'W', W: 'E', N: 'N', S: 'S' }, v: { N: 'S', S: 'N', E: 'E', W: 'W' } };
@@ -67,7 +71,9 @@ export function flipBlueprint(bp, registry, axis = 'h') {
       ? { ...b, x: bp.width - b.x - w, dir }
       : { ...b, y: bp.height - b.y - h, dir };
   }).sort(byPos);
-  return { ...bp, buildings };
+  const out = { ...bp, buildings };
+  if (bp.resources) out.resources = bp.resources.map(r => (axis === 'h' ? { ...r, x: bp.width - r.x - 1 } : { ...r, y: bp.height - r.y - 1 }));
+  return out;
 }
 
 /** 回す・反転を順に行う。list は 'r'（右回り）/ 'h'（左右反転）/ 'v'（上下反転）の並び。 */
@@ -136,10 +142,16 @@ export function pasteBlueprint(world, registry, bp, x, y, { overwrite = false } 
     if (j.state === 'same') { same++; continue; }
     if (j.state === 'blocked') { skipped++; continue; }
     for (const h of j.hit) if (world.remove(h)) replaced++;
-    if (place(world, def, at.x, at.y, at.dir)) placed++;
+    if (place(world, def, at.x, at.y, at.dir, { filter: b.filter })) placed++;
     else skipped++;
   }
-  return { placed, skipped, replaced, same };
+  let ores = 0;
+  for (const r of bp.resources || []) {
+    const rx = x + r.x, ry = y + r.y;
+    if (!inBounds(rx, ry, world.width, world.height) || !(registry.item(r.item) || {}).resource) continue;
+    if (world.resourceAt(rx, ry) !== r.item) { world.setResource(rx, ry, r.item); ores++; }
+  }
+  return bp.resources ? { placed, skipped, replaced, same, ores } : { placed, skipped, replaced, same };
 }
 
 /**
@@ -154,7 +166,7 @@ export function moveArea(world, registry, rect, transforms, x, y, { overwrite = 
   if (!originals.length) return empty;
   const src = {
     width: rect.x1 - rect.x0 + 1, height: rect.y1 - rect.y0 + 1,
-    buildings: originals.map(b => ({ id: b.id, type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir })),
+    buildings: originals.map(b => ({ id: b.id, type: b.type, x: b.x - rect.x0, y: b.y - rect.y0, dir: b.dir, filter: b.filter })),
   };
   const bp = transformBlueprint(src, registry, transforms);
   const ignore = new Set(originals.map(b => b.id));
@@ -168,7 +180,7 @@ export function moveArea(world, registry, rect, transforms, x, y, { overwrite = 
   const moves = [];
   bp.buildings.forEach((b, i) => {
     const p = plan[i];
-    const nb = place(world, p.def, p.x, p.y, p.dir);
+    const nb = place(world, p.def, p.x, p.y, p.dir, { filter: b.filter });
     if (nb) moves.push([b.id, nb.id]);
   });
   return { moved: moves.length, replaced, blocked: 0, moves, width: bp.width, height: bp.height };

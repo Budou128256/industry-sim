@@ -20,6 +20,8 @@ import { Engine } from './worker/engine.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
 import { stackLimit } from './core/inventory.js';
 import { toggleLever } from './core/signal.js';
+import { generateCircuits, clarity, countBends } from './core/circuitgen.js';
+import { generateLines, lineRecipes } from './core/linegen.js';
 
 const results = [];
 function test(name, fn) {
@@ -1345,7 +1347,7 @@ test('粉砕機: スクラップ用アイテム1個を10秒で2〜3種類にし�
   for (let i = 0; i < 10; i++) sim.stepSecond();
   const kinds = l => Object.fromEntries(l.map(s => [s.item, s.count]));
   const onBelt = [...sim.contentsAt(2, 1).belt, ...sim.contentsAt(3, 1).ground];
-  eq(kinds(onBelt), { 'iron-plate': 2, 'copper-plate': 1, 'scrap-part': 1 }, 'A は3種類');
+  eq(kinds(onBelt), { 'iron-plate': 2, 'scrap-part': 1 }, 'A は2種類');
   eq(kinds(sim.contentsAt(1, 3).ground), { 'copper-plate': 1, 'scrap-part': 2 }, 'B は2種類');
   eq(sim.contentsAt(1, 1).machine.input, { item: 'scrap-a', count: 1 });
   eq(sim.contentsAt(1, 1).machine.output, null, '出力に溜まった');
@@ -1375,6 +1377,67 @@ test('レバー: 入っているときだけ電気を通す。置いた直後は
   eq(toggleLever(sim, 1, 1), false);
   eq(poweredAt(sim, 3, 1), false);
   eq(toggleLever(sim, 2, 1), null, '電線を入り切りできた');
+});
+test('レバー: 入っているあいだは発電機なしでも電源になる（強さ12: 隣が12、12マス先まで届く）', () => {
+  const w = new World({ width: 16, height: 3 });
+  const list = [['lever', 0, 1]];
+  for (let x = 1; x <= 11; x++) list.push(['wire', x, 1]);
+  list.push(['miner', 12, 1, 'W'], ['wire', 13, 1], ['miner', 14, 1, 'W']);
+  sigBoard(w, list);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 12, 1), false, '切れているのに届いた');
+  toggleLever(sim, 0, 1);
+  sim.sync();
+  eq(sim.power.get(key(1, 1)), 12);
+  eq(poweredAt(sim, 12, 1), true, '12マス先に届かない');
+  eq(poweredAt(sim, 14, 1), false, '14マス先まで届いた');
+});
+test('I回路: まっすぐだけ通し、横に並んだ別の線とはつながらない', () => {
+  // y=2 の線（発電機から）と y=3 の線（電源なし）を I回路で隣り合わせても、y=3 の採掘機は動かない
+  const w = new World({ width: 8, height: 6 });
+  // 採掘機は自分のマスの下の電線（床の層）から電気をもらう
+  sigBoard(w, [['generator', 0, 2], ['i-circuit', 1, 2, 'E'], ['i-circuit', 2, 2, 'E'], ['i-circuit', 3, 2, 'E'], ['wire', 4, 2], ['miner', 4, 2, 'N'],
+               ['i-circuit', 1, 3, 'E'], ['i-circuit', 2, 3, 'E'], ['i-circuit', 3, 3, 'E'], ['i-circuit', 4, 3, 'E'], ['wire', 5, 3], ['miner', 5, 3, 'N']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 4, 2), true, 'まっすぐ通らない');
+  eq(poweredAt(sim, 5, 3), false, '隣の線へ漏れた');
+  // 向きが横（N）だと、東西の線とはつながらない
+  const w2 = new World({ width: 8, height: 6 });
+  sigBoard(w2, [['generator', 0, 2], ['i-circuit', 1, 2, 'N'], ['wire', 2, 2], ['miner', 3, 2, 'W']]);
+  eq(poweredAt(new Sim(w2, reg), 3, 2), false, '辺の無い向きから通った');
+});
+test('L回路・T回路: 決まった辺どうしでだけ通す。回すと辺も回る', () => {
+  // L（北向き = 北と東）: 西の発電機からは入れない。東向きに回すと東と南
+  const w = new World({ width: 6, height: 6 });
+  sigBoard(w, [['generator', 1, 2], ['l-circuit', 2, 2, 'W'], ['wire', 2, 3], ['miner', 2, 4, 'N'], ['wire', 3, 2], ['miner', 4, 2, 'W']]);
+  const sim = new Sim(w, reg);                      // 西向きの L は 西と北。西から入って北へは行くが、南・東へは行かない
+  eq([poweredAt(sim, 2, 4), poweredAt(sim, 4, 2)], [false, false]);
+  const w2 = new World({ width: 6, height: 6 });
+  sigBoard(w2, [['generator', 1, 2], ['l-circuit', 2, 2, 'S'], ['wire', 2, 3], ['miner', 2, 4, 'N'], ['wire', 3, 2], ['miner', 4, 2, 'W']]);
+  const sim2 = new Sim(w2, reg);                    // 南向きの L は 南と西。西から入って南へ
+  eq([poweredAt(sim2, 2, 4), poweredAt(sim2, 4, 2)], [true, false]);
+  // T（北向き = 西・北・東）: 西から入って北と東へ。南へは行かない
+  const w3 = new World({ width: 6, height: 7 });
+  sigBoard(w3, [['generator', 1, 3], ['t-circuit', 2, 3, 'N'], ['wire', 2, 2], ['miner', 2, 1, 'S'], ['wire', 3, 3], ['miner', 4, 3, 'W'],
+                ['wire', 2, 4], ['miner', 2, 5, 'N']]);
+  const sim3 = new Sim(w3, reg);
+  eq([poweredAt(sim3, 2, 1), poweredAt(sim3, 4, 3), poweredAt(sim3, 2, 5)], [true, true, false]);
+});
+test('I回路: 論理回路の出力・入力ともつながる（辺が向いているときだけ）', () => {
+  // レバー2つ → どちらか一方だけ（論理回路）→ I回路2つ → 採掘機
+  const w = new World({ width: 8, height: 5 });
+  sigBoard(w, [['lever', 1, 1], ['generator', 0, 2], ['logic-circuit', 1, 2, 'E'], ['lever', 1, 3],
+               ['i-circuit', 2, 2, 'E'], ['i-circuit', 3, 2, 'E'], ['wire', 4, 2], ['miner', 5, 2, 'W']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 5, 2), false);
+  toggleLever(sim, 1, 1); sim.sync();
+  eq(poweredAt(sim, 5, 2), true, '回路の出力が I回路を通らない');
+  const w2 = new World({ width: 8, height: 5 });
+  sigBoard(w2, [['lever', 1, 1], ['generator', 0, 2], ['logic-circuit', 1, 2, 'E'], ['lever', 1, 3],
+                ['i-circuit', 2, 2, 'N'], ['wire', 3, 2], ['miner', 4, 2, 'W']]);
+  const sim2 = new Sim(w2, reg);
+  toggleLever(sim2, 1, 1); sim2.sync();
+  eq(poweredAt(sim2, 4, 2), false, '辺が向いていない I回路に入った');
 });
 test('交差回路: 縦と横がつながらず、来た向きのまままっすぐ通す', () => {
   const w = new World({ width: 9, height: 9 });
@@ -1432,6 +1495,178 @@ test('簡易ドリル: 採掘機の半分の速さ（4秒に1個）で掘る', (
   for (let i = 0; i < 8; i++) sim.stepSecond();
   eq(sim.contentsAt(2, 1).ground, [{ item: 'iron-ore', count: 2 }]);
   eq(sim.contentsAt(2, 2).ground, [{ item: 'iron-ore', count: 4 }]);
+});
+test('回路の自動生成: 条件どおりに動く配置だけを作り、「建物が最少」と「見てわかりやすい」の2つに絞る', () => {
+  const cases = [
+    [1, [true, false]],                               // A でない
+    [2, [false, false, false, true]],                 // A かつ B
+    [2, [false, true, true, false]],                  // どちらか一方だけ
+    [2, [false, true, true, true]],                   // A または B
+    [3, [false, false, false, true, false, true, true, false]],   // ちょうど2つ
+  ];
+  for (const [n, table] of cases) {
+    const res = generateCircuits(reg, n, table);
+    ok(res.candidates.length > 0, `${table.map(Number).join('')} の回路ができない`);
+    ok(res.candidates.length <= 2, '候補は2つまで');
+    for (let i = 1; i < res.all.length; i++) {
+      const a = res.all[i - 1], b = res.all[i];
+      ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
+    }
+    const fewest = res.candidates.find(c => c.kinds.includes('建物が最少'));
+    const readable = res.candidates.find(c => c.kinds.includes('見てわかりやすい'));
+    ok(fewest && readable, '2種類がそろっていない');
+    eq(fewest.count, Math.min(...res.all.map(c => c.count)), '建物がいちばん少なくない');
+    if (res.all.some(c => clarity(c).clear)) {
+      ok(clarity(readable).clear, '左にレバー・右に出力の図になっていない');
+      eq(clarity(readable).turns, Math.min(...res.all.filter(c => clarity(c).clear).map(c => clarity(c).turns)), '曲がりがいちばん少なくない');
+    }
+    for (const c of res.candidates) {
+    const levers = c.blueprint.buildings.filter(b => b.type === 'lever');
+    eq(levers.length, n);
+    // 設計図を盤面に貼って、全部の組み合わせを確かめ直す
+    const w = new World({ width: c.width + 2, height: c.height + 2 });
+    pasteBlueprint(w, reg, c.blueprint, 1, 1);
+    const sim = new Sim(w, reg);
+    const on = c.input.map(() => false);
+    for (let r = 0; r < 1 << n; r++) {
+      c.input.forEach((p, i) => { const want = ((r >> (n - 1 - i)) & 1) === 1; if (on[i] !== want) { toggleLever(sim, p.x + 1, p.y + 1); on[i] = want; } });
+      sim.sync();
+      eq((sim.power.get(key(c.output.x + 1, c.output.y + 1)) || 0) >= 1, table[r], `${table.map(Number).join('')} の ${r} 行目`);
+    }
+    }
+  }
+  eq(generateCircuits(reg, 2, [false, false, false, false]).candidates, [], 'いつも出さない回路ができた');
+});
+test('回路の自動生成: 電線の曲がり角を数える（まっすぐ・T字は数えない）', () => {
+  const w = (x, y) => ({ type: 'wire', x, y, dir: 'N' });
+  eq(countBends([w(0, 0), w(1, 0), w(2, 0)]), 0);
+  eq(countBends([w(0, 0), w(1, 0), w(1, 1)]), 1);                 // L字
+  eq(countBends([w(0, 0), w(1, 0), w(2, 0), w(1, 1)]), 0);        // T字
+  eq(countBends([w(0, 0), w(1, 0), w(1, 1), w(2, 1), w(2, 2)]), 3);   // 階段: 角が3つ
+});
+test('回路の自動生成: 3入力で「左にレバー・右に出力」の図があれば、わかりやすいほうはその形', () => {
+  const res = generateCircuits(reg, 3, [false, true, true, false, true, false, false, true]);
+  eq(res.candidates.length, 2);
+  const r = res.candidates.find(c => c.kinds.includes('見てわかりやすい'));
+  ok(r.input.every(p => p.x === 0), 'レバーが左の辺に無い');
+  eq(r.output.x, r.width - 1, '出力が右の辺に無い');
+});
+test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ（入力2つ＋発電機）で組む', () => {
+  const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
+  eq(c.blueprint.buildings.filter(b => b.type === 'logic-circuit').length, 1);
+});
+test('回路の自動生成: 1か所でしか使わないレバーは回路の口へ直接置き、線を延ばさない', () => {
+  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力の電線1つ。左端にレバーを並べていた頃は 8×5=40 だった
+  const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
+  ok(c.area <= 9, `面積 ${c.area}`);
+  eq(c.blueprint.buildings.filter(b => b.type === 'generator').length, 1, 'レバーの隣に発電機がある');
+  eq(c.blueprint.buildings.filter(b => b.type === 'wire').length, 1);
+  const b = c.blueprint.buildings.find(x => x.x === c.output.x && x.y === c.output.y);
+  eq(b && b.type, 'wire', '出力は回路の正面の電線');
+});
+/** 生産ラインの設計図を貼って動かし、出口の箱に入った製品の数（WARMUP 秒後から MEASURE 秒間）を返す。 */
+function runLine(c, input, recipe, warm = 60, measure = 100) {
+  const w = new World({ width: c.width + 4, height: c.height + 4 });
+  const r = pasteBlueprint(w, reg, c.blueprint, 2, 2);
+  eq(r.skipped, 0);
+  const sim = new Sim(w, reg);
+  for (const p of c.inputs) sim.addItems(p.x + 2, p.y + 2, input, 200);
+  const outs = Object.keys(reg.recipe(recipe).outputs);
+  const count = () => c.outputs.reduce((a, p) => {
+    const box = w.at(p.x + 2, p.y + 2);
+    return a + sim.containers.get(box.id).slots.filter(s => s && outs.includes(s.item)).reduce((n, s) => n + s.count, 0);
+  }, 0);
+  for (let i = 0; i < warm; i++) sim.stepSecond();
+  const c0 = count();
+  for (let i = 0; i < measure; i++) sim.stepSecond();
+  eq(sim.unpowered.size, 0, '電気が届いていない建物がある');
+  return count() - c0;
+}
+test('機械の自動配置: 材料の箱から出口の箱まで、貼ると目標どおりに作る。面積の小さい順', () => {
+  for (const count of [1, 2, 4, 5]) {
+    const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count });
+    ok(res.candidates.length >= 1, `${count} 台の候補が無い`);
+    eq(res.target, count * 6);                            // 炉1台 × 10秒に1個 = 毎分6個
+    for (let i = 1; i < res.candidates.length; i++) {
+      const a = res.candidates[i - 1], b = res.candidates[i];
+      ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
+    }
+    for (const c of res.candidates) {
+      eq(c.inputs.length, 1, '材料の箱は1つ'); eq(c.outputs.length, 1, '出口の箱は1つ');
+      ok(!c.blueprint.buildings.some(b => b.type === 'miner' || b.type === 'crude-drill'), 'ドリルがある');
+      ok(!(c.blueprint.resources || []).length, '鉱脈がある');
+      const made = runLine(c, 'iron-ore', 'iron-plate');
+      ok(made >= count * 10 * 0.9, `${count} 台 ${c.patternName}: 100秒で ${made} 個`);
+    }
+  }
+});
+test('機械の自動配置: 材料の箱と出口の箱は、外接する長方形の同じ辺（左）に並ぶ', () => {
+  for (const count of [1, 3, 4, 6]) {
+    const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count }).candidates[0];
+    ok(c, `${count} 台の候補が無い`);
+    for (const p of [...c.inputs, ...c.outputs]) eq(p.x, 0, `${count} 台: 箱が左の辺に無い`);
+  }
+});
+test('機械の自動配置: 台数が2の累乗でなくても、余った出口を作らない（床に材料がこぼれない）', () => {
+  const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 3 }).candidates[0];
+  const w = new World({ width: c.width + 4, height: c.height + 4 });
+  pasteBlueprint(w, reg, c.blueprint, 2, 2);
+  const sim = new Sim(w, reg);
+  for (const p of c.inputs) sim.addItems(p.x + 2, p.y + 2, 'iron-ore', 30);
+  for (let i = 0; i < 20; i++) sim.stepSecond();
+  eq(sim.totals().onGround, 0, '床に物がこぼれた');
+});
+test('機械の自動配置: 製品が何種類もある粉砕機・電気を使う製材機も組める', () => {
+  ok(lineRecipes(reg).find(r => r.id === 'plank'));
+  for (const [recipe, machine, input] of [['scrap-a', 'shredder', 'scrap-a'], ['plank', 'table-saw', 'wood']]) {
+    const res = generateLines(reg, { recipe, machine, count: 3 });
+    ok(res.candidates.length > 0, `${recipe} の候補が無い`);
+    const c = res.candidates[0];
+    const perCycle = Object.values(reg.recipe(recipe).outputs).reduce((a, v) => a + v, 0);
+    ok(runLine(c, input, recipe) >= 3 * perCycle * 10 * 0.9, `${recipe} の出来高が足りない`);
+  }
+});
+test('アームのフィルタ: 決めた種類だけ取る。保存・設計図・回転でも残る', () => {
+  const w = new World({ width: 6, height: 3 });
+  sigBoard(w, [['generator', 0, 0], ['wire', 1, 0], ['wire', 2, 0], ['chest', 1, 1], ['chest', 3, 1]]);
+  ok(place(w, reg.building('inserter'), 2, 1, 'W', { filter: 'copper-ore' }));
+  const sim = new Sim(w, reg);
+  sim.addItems(1, 1, 'iron-ore', 5); sim.addItems(1, 1, 'copper-ore', 3);
+  for (let i = 0; i < 3; i++) sim.stepSecond();
+  const right = sim.contentsAt(3, 1).container.slots.filter(Boolean);
+  eq(right, [{ item: 'copper-ore', count: 3 }], '銅鉱石だけ運ぶはず');
+  eq(sim.contentsAt(1, 1).container.slots.filter(Boolean), [{ item: 'iron-ore', count: 5 }]);
+  // 保存して戻す・設計図・回転
+  const w2 = World.fromJSON(JSON.parse(JSON.stringify(w)), reg);
+  eq(w2.at(2, 1).filter, 'copper-ore');
+  const bp = captureBlueprint(w, { x0: 2, y0: 1, x1: 2, y1: 1 });
+  eq(bp.buildings[0].filter, 'copper-ore');
+  const w3 = new World({ width: 3, height: 3 });
+  pasteBlueprint(w3, reg, rotateBlueprint(bp, reg), 1, 1);
+  eq(w3.at(1, 1).filter, 'copper-ore');
+  eq(rotateAt(w, reg, 2, 1).filter, 'copper-ore');
+  // フィルタは アームにだけ付く
+  ok(!place(w3, reg.building('chest'), 0, 0, 'N', { filter: 'coal' }).filter);
+});
+test('大きい保管箱: 1x2 で、回すと横向きになる', () => {
+  const w = new World({ width: 4, height: 4 });
+  const b = place(w, reg.building('large-chest'), 1, 1, 'N');
+  ok(b); eq(w.at(1, 2).id, b.id);
+  const r = rotateAt(w, reg, 1, 1);
+  ok(r); eq(w.at(2, 1).id, r.id); eq(w.at(1, 2), null);
+  const sim = new Sim(w, reg);
+  eq(sim.contentsAt(1, 1).container.slots.length, 36);
+});
+test('設計図の鉱脈: 回す・反転に付いてきて、貼ると鉱脈も置く', () => {
+  const bp = { format: 'industry-sim-blueprint', version: 1, name: '', width: 3, height: 2,
+    buildings: [{ type: 'miner', x: 0, y: 1, dir: 'N' }], resources: [{ x: 0, y: 0, item: 'iron-ore' }] };
+  const r = rotateBlueprint(bp, reg);                       // 時計回り: (0,0) → (H-1-0, 0) = (1, 0)
+  eq(r.resources, [{ x: 1, y: 0, item: 'iron-ore' }]);
+  eq(r.buildings[0], { type: 'miner', x: 0, y: 0, dir: 'E' });
+  eq(flipBlueprint(bp, reg, 'h').resources, [{ x: 2, y: 0, item: 'iron-ore' }]);
+  const w = new World({ width: 6, height: 6 });
+  eq(pasteBlueprint(w, reg, bp, 2, 2).ores, 1);
+  eq(w.resourceAt(2, 2), 'iron-ore');
 });
 test('レシピの材料と製品が実在する', () => {
   for (const r of reg.recipes.values()) {
