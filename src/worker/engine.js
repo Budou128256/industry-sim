@@ -171,8 +171,8 @@ export class Engine {
   }
 
   /** 回路の自動生成。table は長さ 2^n の真偽の並び（A が上の桁）。盤面は変えない。 */
-  op_genCircuit({ n, table }) {
-    const { all, ...res } = generateCircuits(this.registry, n, table);   // 画面には選んだ2つだけ送る
+  op_genCircuit({ n, table, opts }) {
+    const { all, ...res } = generateCircuits(this.registry, n, table, opts);   // 画面には選んだ1つだけ送る
     return res;
   }
 

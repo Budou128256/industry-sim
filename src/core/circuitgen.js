@@ -167,7 +167,7 @@ function netlist(n, root, boost = false) {
     const id = `g${seq++}`;
     const g = { id, sig, out: out || id };
     gates.push(g);
-    if (boost && !sig.includes('1')) {               // 強め直し: (この出力, 発電機, 空き)
+    if (boost === true && !sig.includes('1')) {      // 強め直し: (この出力, 発電機, 空き)
       g.out = `${id}w`;
       gates.push({ id: `g${seq++}`, sig: [g.out, '1', '0'], out: out || id });
     }
@@ -194,6 +194,12 @@ function netlist(n, root, boost = false) {
     return name;
   };
   const out = build(root);
+  if (boost === 'in') {
+    // 入力の強め直し: 感圧板など弱い入力（強さ5）のすぐ後ろに (入力, 発電機, 空き) を挟み、発電機の強さで先へ送る
+    const used = new Set(gates.flatMap(g => g.sig.filter(x => /^in\d$/.test(x))));
+    for (const g of gates) g.sig = g.sig.map(x => (used.has(x) ? `b${x}` : x));
+    for (const x of used) gates.unshift({ id: `g${seq++}`, sig: [x, '1', '0'], out: `b${x}` });
+  }
   for (const g of gates) g.ins = [...new Set(g.sig.filter(x => x !== '1' && x !== '0'))];
   return { gates, out };
 }
@@ -737,24 +743,44 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
 
 /* ---------- 4. 確かめる ---------- */
 
-/** 盤面に置いて、全部の組み合わせで出力が表どおりか確かめる。 */
+/**
+ * 盤面に置いて、全部の組み合わせで出力が表どおりか確かめる。
+ * 入力は input（0 = A）の付いたレバーか感圧板。感圧板は、床に物を1つ置いて入にする。
+ */
 export function verifyCircuit(registry, n, table, parts, outCell) {
   const xs = parts.map(p => p.x), ys = parts.map(p => p.y);
   const w = new World({ width: Math.max(...xs) + 3, height: Math.max(...ys) + 3 });
   for (const p of parts) if (!place(w, registry.building(p.type), p.x + 1, p.y + 1, p.dir)) return false;
   const sim = new Sim(w, registry);
-  const levers = parts.filter(p => p.type === 'lever').sort((a, b) => a.input - b.input);
-  const on = levers.map(() => false);
+  const kindOf = p => { const d = registry.building(p.type); return d && d.signal && d.signal.type; };
+  const inputs = parts.filter(p => p.input >= 0 && (kindOf(p) === 'lever' || kindOf(p) === 'plate')).sort((a, b) => a.input - b.input);
+  const item = [...registry.items.keys()][0];
+  const on = inputs.map(() => false);
   for (let r = 0; r < 1 << n; r++) {
-    levers.forEach((l, i) => {
+    inputs.forEach((l, i) => {
       const want = inputOn(r, l.input, n);
-      if (on[i] !== want) { toggleLever(sim, l.x + 1, l.y + 1); on[i] = want; }
+      if (on[i] === want) return;
+      if (kindOf(l) === 'lever') toggleLever(sim, l.x + 1, l.y + 1);
+      else if (want) sim.groundAt(l.x + 1, l.y + 1, true).push({ item, count: 1 });
+      else sim.ground.delete(key(l.x + 1, l.y + 1));
+      on[i] = want;
     });
     sim.sync();
     const powered = (sim.power.get(key(outCell.x + 1, outCell.y + 1)) || 0) >= 1;
     if (powered !== !!table[r]) return false;
   }
   return true;
+}
+
+/** 入力に使える建物（signal が lever か plate）と、出力に使える建物（電気が要る 1×1）。 */
+export function circuitEnds(registry) {
+  const ins = [], outs = [];
+  for (const [id, d] of registry.buildings) {
+    const one = (!d.size || (d.size.width === 1 && d.size.height === 1));
+    if (d.signal && (d.signal.type === 'lever' || d.signal.type === 'plate')) ins.push({ id, name: d.name });
+    else if (one && d.power && d.power.needs) outs.push({ id, name: d.name });
+  }
+  return { inputs: ins, outputs: outs };
 }
 
 /* ---------- まとめ ---------- */
@@ -771,8 +797,15 @@ function permutations(list) {
  * 戻り値: { terms, text, candidates: [{ pattern, name, kinds, blueprint, width, height, area, count, bends, input, output }], all }
  * candidates は「建物が最少」の1つ（同じ建物数・面積なら見やすいほう）。all は確かめた配置の全部（面積の小さい順）
  */
-export function generateCircuits(registry, n, table) {
+export function generateCircuits(registry, n, table, opts = {}) {
   if (!(n >= 1 && n <= MAX_INPUTS)) throw new Error(`入力は1〜${MAX_INPUTS}つ`);
+  // 詳細設定（ユーザーの依頼 2026-10-07）: 入力ごとの建物（初期はレバー）と、出力の建物（初期はランプ）
+  const ends = circuitEnds(registry);
+  const inTypes = [...Array(n)].map((_, i) => (opts.inputs && opts.inputs[i]) || 'lever');
+  const outType = opts.output || 'lamp';
+  for (const t of inTypes) if (!ends.inputs.some(e => e.id === t)) throw new Error(`入力に使えない建物: ${t}`);
+  if (!ends.outputs.some(e => e.id === outType)) throw new Error(`出力に使えない建物: ${outType}`);
+  const swapIns = parts => parts.map(p => (p.type === 'lever' && p.input >= 0 && inTypes[p.input] !== 'lever' ? { ...p, type: inTypes[p.input] } : p));
   const terms = minimize(n, table);
   const text = termsText(n, terms);
   let root = synthFor(n, table);
@@ -792,14 +825,16 @@ export function generateCircuits(registry, n, table) {
     const { pattern, boost, perm, direct, tight } = t;
     // 出力の口は回路のすぐ前（線を延ばさない）。つなげなければ、少し先に離してもう一度
     let got = layoutCircuit(n, root, pattern, boost, perm, direct, true, near, tight);
+    if (got) got.parts = swapIns(got.parts);
     if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) {
       got = layoutCircuit(n, root, pattern, boost, perm, direct, false, near, tight);
+      if (got) got.parts = swapIns(got.parts);
       if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return null;
     }
     // ゴールの目印にランプを付け足す（ユーザーの依頼 2026-10-07「ここがゴールだよ」と示す）
     const lamp = addLamp(got.parts, got.out);
     if (lamp) {
-      const withLamp = [...got.parts, { type: 'lamp', x: lamp.x, y: lamp.y, dir: 'N' }];
+      const withLamp = [...got.parts, { type: outType, x: lamp.x, y: lamp.y, dir: 'N' }];
       // ランプを足しても表のとおり光るか、もう一度確かめる（だめならランプなし）
       if (verifyCircuit(registry, n, table, withLamp, lamp)) { got.parts = withLamp; got.out = lamp; got.lamp = true; }
     }
@@ -814,13 +849,13 @@ export function generateCircuits(registry, n, table) {
     const made = { area: width * height, count: buildings.length };
     if (seen.has(sig)) return made;                 // 違う型でも同じ形になったら1つだけ
     seen.add(sig);
-    const name = `回路 ${text}（${pattern.name}${boost ? '・強め直し' : ''}）`;
+    const name = `回路 ${text}（${pattern.name}${boost === 'in' ? '・入力の強め直し' : boost ? '・強め直し' : ''}）`;
     candidates.push({
       pattern: pattern.id, boost, name, order,
-      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (near ? '・レバーを口の近くに' : '') + (got.tiles ? '・I/L/T回路' : '') + (perm && perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
+      patternName: pattern.name + (boost === 'in' ? '・入力の強め直し' : boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (near ? '・レバーを口の近くに' : '') + (got.tiles ? '・I/L/T回路' : '') + (perm && perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
       tiles: got.tiles || 0, lamp: !!got.lamp,
       gates: buildings.filter(b => b.type === 'logic-circuit').length, width, height, area: width * height, count: buildings.length,
-      input: got.parts.filter(p => p.type === 'lever').sort((a, b) => a.input - b.input).map(p => ({ x: p.x - x0, y: p.y - y0 })),
+      input: got.parts.filter(p => p.input >= 0 && inTypes.includes(p.type)).sort((a, b) => a.input - b.input).map(p => ({ x: p.x - x0, y: p.y - y0 })),
       output: { x: got.out.x - x0, y: got.out.y - y0 },
       blueprint: { format: BLUEPRINT_FORMAT, version: BLUEPRINT_VERSION, name, width, height, buildings },
     });
@@ -833,6 +868,12 @@ export function generateCircuits(registry, n, table) {
     if (root && root.kind !== 'always') searchCompact(n, root, SEARCH_MS, attempt(false), tries.length * 3);
     // それでも1つも作れないとき（レバーの電気が届かない）は、レバーを口の近くへ移す形
     if (!candidates.length) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
+    // 感圧板など弱い入力で届かないときは、入力のすぐ後ろで強め直す形
+    if (!candidates.length && inTypes.some(t => t !== 'lever') && root && root.kind !== 'always') {
+      const weak = tries.filter(t => !t.boost).map(t => ({ ...t, boost: 'in' }));
+      weak.forEach((t, i) => attempt(false)(t, tries.length * 2 + i));
+      if (!candidates.length) searchCompact(n, root, SEARCH_MS, attempt(false), tries.length * 4, 'in');
+    }
   };
   run();
   // それでも作れないときは、「または」（出力どうしを電線でつなぐ）を使わない組み方でもう一度。
@@ -861,8 +902,8 @@ function rng(seed) {
  * I・L・T 回路ありでつなぐ。深い段の回路ほど右に来るように並べ替える。小さい枠から試す。
  * 見つかった配置は try（attempt と同じ形）に渡し、確かめて候補に足してもらう。
  */
-function searchCompact(n, root, ms, tryOne, order0) {
-  const { gates } = netlist(n, root, false);
+function searchCompact(n, root, ms, tryOne, order0, boost = false) {
+  const { gates } = netlist(n, root, boost);
   if (!gates.length) return;
   const dep = depths(gates);
   const rand = rng(gates.length * 977 + n * 131 + JSON.stringify(gates.map(g => g.sig)).length);
@@ -872,7 +913,7 @@ function searchCompact(n, root, ms, tryOne, order0) {
   const pool = [];                                   // よかった配置（面積・数の少ない順に5つ）
   const run = (pl) => {
     const pattern = { id: 'search', name: '探索', col: 3, row: 3, inGap: 2, ...pl };
-    const made = tryOne({ pattern, boost: false, perm: null, direct: pl.direct, tight: true }, order0 + k++);
+    const made = tryOne({ pattern, boost, perm: null, direct: pl.direct, tight: true }, order0 + k++);
     if (!made) return;
     pool.push({ pl, score: made.area * 100 + made.count });
     pool.sort((a, b) => a.score - b.score);
