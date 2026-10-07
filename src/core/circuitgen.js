@@ -24,7 +24,7 @@ import { World } from './world.js';
 import { Sim } from './sim.js';
 import { place } from './placement.js';
 import { key } from './grid.js';
-import { toggleLever } from './signal.js';
+import { pathArms, toggleLever } from './signal.js';
 import { BLUEPRINT_FORMAT, BLUEPRINT_VERSION } from './blueprint.js';
 
 export const MAX_INPUTS = 3;
@@ -236,9 +236,28 @@ export const PATTERNS = [
   { id: 'line', name: '一列', col: 4, row: 5, inGap: 3, line: true },
   { id: 'stagger', name: '段違い', col: 4, row: 6, inGap: 3, stagger: true },
   { id: 'tall', name: '縦長', col: 4, row: 5, inGap: 6 },
+  // I・L・T 回路で別の線を隣に並べる前提の、詰めた型（tight のときだけ試す）
+  { id: 'packed', name: 'ぎっしり', col: 3, row: 4, inGap: 2, tightOnly: true },
 ];
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const DIR_OF = { '1,0': 'E', '-1,0': 'W', '0,1': 'S', '0,-1': 'N' };
+const STEP = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
+const ORDER = ['N', 'E', 'S', 'W'];
+const BACK = { N: 'S', S: 'N', E: 'W', W: 'E' };
+/** I・L・T 回路（北向きのときの辺。data/buildings と同じ）。 */
+const PATH_ARMS = { 'i-circuit': ['N', 'S'], 'l-circuit': ['N', 'E'], 't-circuit': ['W', 'N', 'E'] };
+
+/** 辺の組（2〜3）に合う I・L・T 回路と向き。合わなければ null。 */
+export function pathTile(arms) {
+  const want = [...arms].sort().join();
+  for (const type of Object.keys(PATH_ARMS)) {
+    for (const dir of ORDER) {
+      if (pathArms({ arms: PATH_ARMS[type] }, dir).sort().join() === want) return { type, dir };
+    }
+  }
+  return null;
+}
 
 /** 迷路探索の待ち行列（距離 d が小さい順、同じなら入れた順 s）。 */
 class MinHeap {
@@ -272,6 +291,8 @@ class Layout {
     this.W = width; this.H = height;
     this.occ = new Map();     // key -> { t: 'net'|'pin'|'gate'|'gen'|'lever'|'res'|'cross', n? }
     this.parts = [];          // 置く建物 { type, x, y, dir }
+    this.link = new Map();    // 回路の口のマス -> 回路のある向き（I・L・T 回路にするとき、その辺を開ける）
+    this.tight = false;       // 別の線と隣り合ってよいか（隣るマスは、あとで I・L・T 回路にする）
   }
   in(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
   get(x, y) { return this.occ.get(key(x, y)); }
@@ -291,7 +312,7 @@ class Layout {
       if (!nb || nb.t === 'res' || nb.t === 'cross') continue;
       if (nb.t === 'gate') { if (!(o && o.t === 'pin')) return false; continue; }   // 回路の隣は決めた口だけ
       if (nb.t === 'gen') return false;
-      if (nb.n !== n) return false;
+      if (nb.n !== n && !this.tight) return false;
     }
     return true;
   }
@@ -362,7 +383,7 @@ class Layout {
 }
 
 /** 型 pattern で並べてつなぐ。できなければ null。 */
-function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = false, nearOut = true, leverGen = false) {
+function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = false, nearOut = true, leverGen = false, tight = false) {
   if (!root) return null;
   const always = root.kind === 'always';
   const { gates, out } = always ? { gates: [], out: 'out' } : netlist(n, root, boost);
@@ -376,6 +397,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
   const W = 4 + (maxDepth + 2) * pattern.col + 4 + 6;
   const H = Math.max(n * pattern.inGap + 2, (pattern.line ? 1 : tallest) * pattern.row + 2, 7) + 6 + 8;
   const L = new Layout(W, H);
+  L.tight = tight;
   const pins = {};                  // net -> 入る口のマス [{x, y}]
   const sources = {};               // net -> 出る口のマス {x, y}
   const addPin = (net, x, y) => { (pins[net] = pins[net] || []).push({ x, y }); L.set(x, y, { t: 'pin', n: net }); };
@@ -431,6 +453,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
         const side = pref.find(sd => free.has(sd));
         free.delete(side);
         addPin(net, ...sides[side]);
+        L.link.set(key(...sides[side]), BACK[side]);
       }
       const rest = [...free];
       for (const v of g.sig.filter(v => v === '1' || v === '0')) {
@@ -448,6 +471,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
       }
       if (sources[g.out]) addPin(g.out, x + 1, y);            // 「または」: 同じ線に出す2つ目以降の回路
       else { L.set(x + 1, y, { t: 'pin', n: g.out }); sources[g.out] = { x: x + 1, y }; }
+      L.link.set(key(x + 1, y), 'W');
     });
   });
   if (gates.some(g => g.bad || !g.at)) return null;
@@ -512,17 +536,37 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
   }
   if (!done) return null;
   if (L.get(ox, oy) && L.get(ox, oy).t === 'pin') L.set(ox, oy, { t: 'net', n: out });   // 線をつながなかった出力の口も電線にする
-  // 建物にする
+  // 建物にする。別の物と隣り合う電線は、自分の線の向きだけを開けた I・L・T 回路にする（tight のときだけ起きる）
   const parts = [...L.parts];
+  let tiles = 0;
   for (let y = 0; y < L.H; y++) {
     for (let x = 0; x < L.W; x++) {
       const o = L.get(x, y);
       if (!o) continue;
-      if (o.t === 'net') parts.push({ type: 'wire', x, y, dir: 'N' });
-      else if (o.t === 'cross') parts.push({ type: 'cross-circuit', x, y, dir: 'N' });
+      if (o.t === 'cross') { parts.push({ type: 'cross-circuit', x, y, dir: 'N' }); continue; }
+      if (o.t !== 'net') continue;
+      const own = [], open = [];
+      let foreign = false;
+      for (const d of ORDER) {
+        const nb = L.get(x + STEP[d][0], y + STEP[d][1]);
+        if (L.link.get(key(x, y)) === d || (nb && nb.t === 'cross')) own.push(d);
+        else if (nb && (nb.t === 'net' || nb.t === 'pin' || nb.t === 'lever') && nb.n === o.n) own.push(d);
+        else if (!nb || nb.t === 'res') open.push(d);
+        else foreign = true;
+      }
+      if (!foreign) { parts.push({ type: 'wire', x, y, dir: 'N' }); continue; }
+      if (own.length === 1) {                        // 行き止まり: 空いている辺を1つ足す（まっすぐを先に）
+        const extra = [BACK[own[0]], ...open].find(d => open.includes(d));
+        if (!extra) return null;
+        own.push(extra);
+      }
+      const tile = pathTile(own);
+      if (!tile) return null;
+      parts.push({ type: tile.type, x, y, dir: tile.dir });
+      tiles++;
     }
   }
-  return { parts, out: { x: ox, y: oy }, moved };
+  return { parts, out: { x: ox, y: oy }, moved, tiles };
 }
 
 /* ---------- 4. 確かめる ---------- */
@@ -572,15 +616,18 @@ export function generateCircuits(registry, n, table) {
   // 型 × 強め直しの有無 × レバーの並び順（入力が3つなら6通り）を全部試す
   const perms = permutations([...Array(n).keys()]);
   const tries = [];
-  for (const direct of [true, false]) for (const boost of [false, true]) for (const p of PATTERNS) for (const perm of perms) tries.push({ pattern: p, boost, perm, direct });
+  for (const tight of [false, true]) for (const direct of [true, false]) for (const boost of [false, true]) for (const p of PATTERNS) for (const perm of perms) {
+    if (p.tightOnly && !tight) continue;
+    tries.push({ pattern: p, boost, perm, direct, tight });
+  }
   // レバーは電源（強さ12）。まず発電機なしで試し、レバーの電気が届かず1つも作れないときだけ、
   // 左端のレバーの隣に発電機を置いて強める形も試す
   const attempt = (leverGen) => (t, order) => {
-    const { pattern, boost, perm, direct } = t;
+    const { pattern, boost, perm, direct, tight } = t;
     // 出力の口は回路のすぐ前（線を延ばさない）。つなげなければ、少し先に離してもう一度
-    let got = layoutCircuit(n, root, pattern, boost, perm, direct, true, leverGen);
+    let got = layoutCircuit(n, root, pattern, boost, perm, direct, true, leverGen, tight);
     if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) {
-      got = layoutCircuit(n, root, pattern, boost, perm, direct, false, leverGen);
+      got = layoutCircuit(n, root, pattern, boost, perm, direct, false, leverGen, tight);
       if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return;
     }
     const gen = leverGen && got.parts.some(p => p.type === 'generator' && p.x === 0);
@@ -597,7 +644,8 @@ export function generateCircuits(registry, n, table) {
     const name = `回路 ${text}（${pattern.name}${boost ? '・強め直し' : ''}）`;
     candidates.push({
       pattern: pattern.id, boost, name, order,
-      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (gen ? '・発電機でレバーを強める' : '') + (perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
+      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (got.tiles ? '・I/L/T回路' : '') + (gen ? '・発電機でレバーを強める' : '') + (perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
+      tiles: got.tiles || 0,
       gates: buildings.filter(b => b.type === 'logic-circuit').length, width, height, area: width * height, count: buildings.length,
       input: got.parts.filter(p => p.type === 'lever').sort((a, b) => a.input - b.input).map(p => ({ x: p.x - x0, y: p.y - y0 })),
       output: { x: got.out.x - x0, y: got.out.y - y0 },
@@ -611,14 +659,21 @@ export function generateCircuits(registry, n, table) {
   return { terms, text, how, candidates: pickCircuits(candidates), all: candidates };
 }
 
-/** 電線の曲がり角の数。つながる先がちょうど2方向で、それが縦と横の電線マス。 */
+/** 電線（I・L・T 回路も）の曲がり角の数。つながる先がちょうど2方向で、それが縦と横のマス。T字は数えない。 */
 export function countBends(buildings) {
   const at = new Map(buildings.map(b => [`${b.x},${b.y}`, b]));
+  const sides = b => b.type === 'wire' ? ORDER : PATH_ARMS[b.type] ? pathArms({ arms: PATH_ARMS[b.type] }, b.dir) : null;
   let n = 0;
   for (const b of buildings) {
-    if (b.type !== 'wire') continue;
-    const h = [[-1, 0], [1, 0]].filter(([dx, dy]) => at.has(`${b.x + dx},${b.y + dy}`)).length;
-    const v = [[0, -1], [0, 1]].filter(([dx, dy]) => at.has(`${b.x + dx},${b.y + dy}`)).length;
+    const mine = sides(b);
+    if (!mine) continue;
+    const conn = mine.filter(d => {
+      const nb = at.get(`${b.x + STEP[d][0]},${b.y + STEP[d][1]}`);
+      if (!nb) return false;
+      const theirs = sides(nb);
+      return !theirs || theirs.includes(BACK[d]);       // 電線・I・L・T 回路どうしは、両方の辺が向き合うときだけ
+    });
+    const h = conn.filter(d => d === 'E' || d === 'W').length, v = conn.length - h;
     if (h === 1 && v === 1) n++;
   }
   return n;
@@ -626,13 +681,14 @@ export function countBends(buildings) {
 
 /**
  * 見て仕組みがわかりやすいか。左の辺にレバーが A・B・C の順に上から並び、出力が右の辺にある
- * （左から右へ信号が流れる図）なら clear。そのうえで、曲がり角と交差の数が少ないほどよい。
+ * （左から右へ信号が流れる図）なら clear。そのうえで、曲がり角・交差回路・I・L・T 回路の数が少ないほどよい。
  */
 export function clarity(c) {
   const ins = c.input;
   const clear = ins.every(p => p.x === 0) && ins.every((p, i) => i === 0 || ins[i - 1].y < p.y) && c.output.x === c.width - 1;
-  const crosses = c.blueprint.buildings.filter(b => b.type === 'cross-circuit').length;
-  return { clear, turns: c.bends + crosses };
+  // 交差回路・I・L・T 回路は、見て向きを読み取る必要がある部品なので、曲がり角と同じく1つと数える
+  const special = c.blueprint.buildings.filter(b => b.type === 'cross-circuit' || PATH_ARMS[b.type]).length;
+  return { clear, turns: c.bends + special };
 }
 
 /**

@@ -1537,12 +1537,31 @@ test('回路の自動生成: 条件どおりに動く配置だけを作り、「
   }
   eq(generateCircuits(reg, 2, [false, false, false, false]).candidates, [], 'いつも出さない回路ができた');
 });
+test('回路の自動生成: 別の線と隣り合う所は I・L・T 回路にして詰める。前は作れなかった条件も作れる', () => {
+  // 10001100（A が上の桁）は、電線だけでは線がつなぎきれなかった
+  const table = [true, false, false, false, true, true, false, false];
+  const res = generateCircuits(reg, 3, table);
+  ok(res.candidates.length > 0, '作れない');
+  const c = res.candidates[0];
+  ok(c.blueprint.buildings.some(b => ['i-circuit', 'l-circuit', 't-circuit'].includes(b.type)), 'I・L・T 回路を使っていない');
+  const w = new World({ width: c.width + 2, height: c.height + 2 });
+  pasteBlueprint(w, reg, c.blueprint, 1, 1);
+  const sim = new Sim(w, reg);
+  const on = c.input.map(() => false);
+  for (let r = 0; r < 8; r++) {
+    c.input.forEach((p, i) => { const want = ((r >> (2 - i)) & 1) === 1; if (on[i] !== want) { toggleLever(sim, p.x + 1, p.y + 1); on[i] = want; } });
+    sim.sync();
+    eq((sim.power.get(key(c.output.x + 1, c.output.y + 1)) || 0) >= 1, table[r], `${r} 行目`);
+  }
+});
 test('回路の自動生成: 電線の曲がり角を数える（まっすぐ・T字は数えない）', () => {
   const w = (x, y) => ({ type: 'wire', x, y, dir: 'N' });
   eq(countBends([w(0, 0), w(1, 0), w(2, 0)]), 0);
   eq(countBends([w(0, 0), w(1, 0), w(1, 1)]), 1);                 // L字
   eq(countBends([w(0, 0), w(1, 0), w(2, 0), w(1, 1)]), 0);        // T字
   eq(countBends([w(0, 0), w(1, 0), w(1, 1), w(2, 1), w(2, 2)]), 3);   // 階段: 角が3つ
+  eq(countBends([w(0, 0), { type: 'l-circuit', x: 1, y: 0, dir: 'S' }, w(1, 1)]), 1);   // L回路（南向き = 南と西）
+  eq(countBends([w(0, 0), { type: 'i-circuit', x: 1, y: 0, dir: 'N' }, w(1, 1)]), 0);   // 辺が向いていなければつながらない
 });
 test('回路の自動生成: 3入力で「左にレバー・右に出力」の図があれば、わかりやすいほうはその形', () => {
   const res = generateCircuits(reg, 3, [false, true, true, false, true, false, false, true]);
