@@ -767,7 +767,7 @@ function permutations(list) {
 /**
  * 真理値表 table（長さ 2^n。A が上の桁）から、型ごとの回路を作って確かめ、よい順に並べる。
  * 戻り値: { terms, text, candidates: [{ pattern, name, kinds, blueprint, width, height, area, count, bends, input, output }], all }
- * candidates は「建物が最少」「見てわかりやすい」の2つ（同じなら1つ）。all は確かめた配置の全部（面積の小さい順）
+ * candidates は「建物が最少」の1つ（同じ建物数・面積なら見やすいほう）。all は確かめた配置の全部（面積の小さい順）
  */
 export function generateCircuits(registry, n, table) {
   if (!(n >= 1 && n <= MAX_INPUTS)) throw new Error(`入力は1〜${MAX_INPUTS}つ`);
@@ -941,23 +941,18 @@ export function clarity(c) {
 }
 
 /**
- * 候補を2種類だけに絞る（ユーザーの希望 2026-10-07「型が増えても結局はこの二つ」）:
- * 「建物が最少」と「見てわかりやすい」（曲がりが最少。ユーザーの言葉では「視覚的に仕組みがわかりやすい」）。
- * わかりやすいほうは、左にレバー・右に出力の図になっている物を先に、曲がり角＋交差 → 建物 → 面積の少ない順。
- * 同じ配置なら1つにまとめる。
+ * 候補を「建物が最少」の1つだけにする（ユーザーの判断 2026-10-07: 最少の形が見やすさの考えにも沿って
+ * いるので「見てわかりやすい」は消してよい）。建物 → 面積の少ない順。同じなら見やすいほう
+ * （左にレバー・右に出力の図 → 曲がり角＋交差＋I/L/T の少ない順）。
  */
 export function pickCircuits(list) {
   if (!list.length) return [];
   // ゴールのランプが付けられた形を優先する（ユーザーの依頼 2026-10-07）
   if (list.some(c => c.lamp)) list = list.filter(c => c.lamp);
-  const pick = cmp => list.reduce((m, c) => (cmp(c, m) < 0 ? c : m));
-  const fewest = pick((a, b) => a.count - b.count || a.bends - b.bends || a.area - b.area || a.order - b.order);
-  const readable = pick((a, b) => {
-    const x = clarity(a), y = clarity(b);
-    return (y.clear - x.clear) || (x.turns - y.turns) || a.count - b.count || a.area - b.area || a.order - b.order;
+  const best = list.reduce((m, c) => {
+    const x = clarity(c), y = clarity(m);
+    const d = (c.count - m.count) || (c.area - m.area) || (y.clear - x.clear) || (x.turns - y.turns) || (c.order - m.order);
+    return d < 0 ? c : m;
   });
-  const out = [{ ...fewest, kinds: ['建物が最少'] }];
-  if (readable === fewest) out[0].kinds.push('見てわかりやすい');
-  else out.push({ ...readable, kinds: ['見てわかりやすい'] });
-  return out;
+  return [{ ...best, kinds: ['建物が最少'] }];
 }

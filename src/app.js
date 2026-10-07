@@ -273,7 +273,7 @@ async function genCircuit() {
   for (let r = 0; r < 1 << n; r++) table.push(!!$('cgTable').querySelector(`input[data-r="${r}"]`).checked);
   if (!table.some(Boolean)) { status('電気を出したい組み合わせに、1つ以上印を付けてください', true); return; }
   $('btnGen').disabled = true;
-  $('cgText').textContent = '作っています…（型ごとに作って全部の組み合わせを確かめ、「建物が最少」と「見てわかりやすい」を選んでいます）';
+  $('cgText').textContent = '作っています…（型ごとに作って全部の組み合わせを確かめ、建物がいちばん少ない形を選んでいます）';
   $('cgList').innerHTML = '';
   try {
     const res = await state.client.call('genCircuit', { n, table });

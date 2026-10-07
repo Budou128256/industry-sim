@@ -1525,7 +1525,7 @@ test('簡易ドリル: 採掘機の半分の速さ（4秒に1個）で掘る', (
   eq(sim.contentsAt(2, 1).ground, [{ item: 'iron-ore', count: 2 }]);
   eq(sim.contentsAt(2, 2).ground, [{ item: 'iron-ore', count: 4 }]);
 });
-test('回路の自動生成: 条件どおりに動く配置だけを作り、「建物が最少」と「見てわかりやすい」の2つに絞る', () => {
+test('回路の自動生成: 条件どおりに動く配置だけを作り、「建物が最少」の1つに絞る（同じなら見やすいほう）', () => {
   const cases = [
     [1, [true, false]],                               // A でない
     [2, [false, false, false, true]],                 // A かつ B
@@ -1536,19 +1536,17 @@ test('回路の自動生成: 条件どおりに動く配置だけを作り、「
   for (const [n, table] of cases) {
     const res = generateCircuits(reg, n, table);
     ok(res.candidates.length > 0, `${table.map(Number).join('')} の回路ができない`);
-    ok(res.candidates.length <= 2, '候補は2つまで');
+    eq(res.candidates.length, 1, '候補は1つ');
     for (let i = 1; i < res.all.length; i++) {
       const a = res.all[i - 1], b = res.all[i];
       ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
     }
-    const fewest = res.candidates.find(c => c.kinds.includes('建物が最少'));
-    const readable = res.candidates.find(c => c.kinds.includes('見てわかりやすい'));
-    ok(fewest && readable, '2種類がそろっていない');
-    eq(fewest.count, Math.min(...res.all.map(c => c.count)), '建物がいちばん少なくない');
-    if (res.all.some(c => clarity(c).clear)) {
-      ok(clarity(readable).clear, '左にレバー・右に出力の図になっていない');
-      eq(clarity(readable).turns, Math.min(...res.all.filter(c => clarity(c).clear).map(c => clarity(c).turns)), '曲がりがいちばん少なくない');
-    }
+    const fewest = res.candidates[0];
+    eq(fewest.kinds, ['建物が最少']);
+    const pool = res.all.some(c => c.lamp) ? res.all.filter(c => c.lamp) : res.all;
+    eq(fewest.count, Math.min(...pool.map(c => c.count)), '建物がいちばん少なくない');
+    const same = pool.filter(c => c.count === fewest.count && c.area === fewest.area);
+    if (same.some(c => clarity(c).clear)) ok(clarity(fewest).clear, '同じ大きさに左レバー・右出力の図があるのに選んでいない');
     for (const c of res.candidates) {
     const levers = c.blueprint.buildings.filter(b => b.type === 'lever');
     eq(levers.length, n);
@@ -1591,13 +1589,6 @@ test('回路の自動生成: 電線の曲がり角を数える（まっすぐ・
   eq(countBends([w(0, 0), w(1, 0), w(1, 1), w(2, 1), w(2, 2)]), 3);   // 階段: 角が3つ
   eq(countBends([w(0, 0), { type: 'l-circuit', x: 1, y: 0, dir: 'S' }, w(1, 1)]), 1);   // L回路（南向き = 南と西）
   eq(countBends([w(0, 0), { type: 'i-circuit', x: 1, y: 0, dir: 'N' }, w(1, 1)]), 0);   // 辺が向いていなければつながらない
-});
-test('回路の自動生成: 3入力で「左にレバー・右に出力」の図があれば、わかりやすいほうはその形', () => {
-  const res = generateCircuits(reg, 3, [false, true, true, false, true, false, false, true]);
-  eq(res.candidates.length, 2);
-  const r = res.candidates.find(c => c.kinds.includes('見てわかりやすい'));
-  ok(r.input.every(p => p.x === 0), 'レバーが左の辺に無い');
-  eq(r.output.x, r.width - 1, '出力が右の辺に無い');
 });
 test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ（入力2つ＋発電機）で組む', () => {
   const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
