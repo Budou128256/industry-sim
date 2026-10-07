@@ -102,15 +102,17 @@ function planTree(P, o) {
   // 木（葉の範囲 [lo, hi)）。物が西から入ってくるマス { row, x } を返す。
   // 機械の無い葉しか無い側は作らない（台数が2の累乗でないとき。その分、残りの機械へ多めに配られる）
   const node = (lo, hi, level) => {
-    if (hi - lo === 1) return { row: leafRow(lo), x: Xl + 1 };         // 葉: 機械の手前の落ちるマス
+    // 葉: 機械の手前の、材料が落ちるマス。いちばん下の段のスプリッターの真上・真下のマスにする
+    // （スプリッターは出し先がベルトでなければ、そのマスの床に落とす。間にベルトを挟まないので1列詰まる）
+    if (hi - lo === 1) return { row: leafRow(lo), x: Xl };
     const mid = (lo + hi) >> 1;
     if (mid >= k) return node(lo, mid, level + 1);
     const X = Xr + level;
     const a = node(lo, mid, level + 1), b = node(mid, hi, level + 1);
     const c = (a.row + b.row) >> 1;
     P.put('splitter', X, c, 'N');                                      // 西から入り、上下へ半分ずつ
-    for (let y = c - 1; y >= a.row; y--) P.put('belt', X, y, y === a.row ? 'E' : 'N');
-    for (let y = c + 1; y <= b.row; y++) P.put('belt', X, y, y === b.row ? 'E' : 'S');
+    if (a.x !== X) for (let y = c - 1; y >= a.row; y--) P.put('belt', X, y, y === a.row ? 'E' : 'N');
+    if (b.x !== X) for (let y = c + 1; y <= b.row; y++) P.put('belt', X, y, y === b.row ? 'E' : 'S');
     for (const t of [a, b]) for (let x = X + 1; x < t.x; x++) P.put('belt', x, t.row, 'E');
     return { row: c, x: X };
   };
@@ -125,7 +127,7 @@ function planTree(P, o) {
   for (let i = 0; i < k; i++) {
     const r = leafRow(i);
     const chestIn = L === 1;
-    xo = unitE(P, o.machine, (L === 1 ? Xr : Xl + 1), r, chestIn);
+    xo = unitE(P, o.machine, (L === 1 ? Xr : Xl), r, chestIn);
     rows.push(r);
   }
   // 製品: 右の列を下へ流し、いちばん下の行を左へ戻して、左端の出口の箱へ。

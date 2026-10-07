@@ -20,7 +20,7 @@ import { Engine } from './worker/engine.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
 import { stackLimit } from './core/inventory.js';
 import { toggleLever } from './core/signal.js';
-import { generateCircuits, clarity, countBends } from './core/circuitgen.js';
+import { generateCircuits, clarity, countBends, verifyCircuit } from './core/circuitgen.js';
 import { generateLines, lineRecipes } from './core/linegen.js';
 
 const results = [];
@@ -1363,13 +1363,15 @@ test('粉砕機: スクラップ用アイテム1個を10秒で2〜3種類にし�
 /* ---- レバー・感圧板・回路（signal.js） ---- */
 const sigBoard = (w, list) => { for (const [type, x, y, dir = 'N'] of list) ok(place(w, reg.building(type), x, y, dir), `${type} を (${x},${y}) に置けない`); };
 const poweredAt = (sim, x, y) => { sim.sync(); return !sim.unpowered.has(sim.world.at(x, y).id); };
-test('レバー: 入っているときだけ電気を通す。置いた直後は切れている。保存しても入り切りが残る', () => {
+test('レバー: 入っているときだけ電気を出す。置いた直後は切れている。保存しても入り切りが残る', () => {
   const w = new World({ width: 8, height: 3 });
   sigBoard(w, [['generator', 0, 1], ['lever', 1, 1], ['wire', 2, 1], ['miner', 3, 1, 'W']]);
   const sim = new Sim(w, reg);
   eq(poweredAt(sim, 3, 1), false, '切れているのに届いた');
   eq(toggleLever(sim, 1, 1), true);
   eq(poweredAt(sim, 3, 1), true, '入れたのに届かない');
+  sim.sync();
+  eq(sim.power.get(key(2, 1)), 12, '隣の発電機の電気を通した（レバーは強さ12のまま）');
   const saved = JSON.parse(JSON.stringify({ world: w, sim }));
   const w2 = World.fromJSON(saved.world, reg);
   const back = Sim.fromJSON(saved.sim, w2, reg);
@@ -1391,6 +1393,33 @@ test('レバー: 入っているあいだは発電機なしでも電源になる
   eq(sim.power.get(key(1, 1)), 12);
   eq(poweredAt(sim, 12, 1), true, '12マス先に届かない');
   eq(poweredAt(sim, 14, 1), false, '14マス先まで届いた');
+});
+test('ランプ: 電気が届くと光る（電気が要る建物と同じ）。電線と同じく電気を通す', () => {
+  const w = new World({ width: 8, height: 3 });
+  sigBoard(w, [['lever', 0, 1], ['wire', 1, 1], ['lamp', 2, 1], ['wire', 3, 1], ['lamp', 4, 1]]);
+  const sim = new Sim(w, reg);
+  eq([poweredAt(sim, 2, 1), poweredAt(sim, 4, 1)], [false, false]);
+  toggleLever(sim, 0, 1); sim.sync();
+  eq([poweredAt(sim, 2, 1), poweredAt(sim, 4, 1)], [true, true], 'ランプが光らない・先へ通さない');
+});
+test('交差回路: まっすぐ来た電気を、隣の論理回路の入力に入れる（ユーザーの設計図）', () => {
+  // 論理回路（東向き）の上の入力に A、下の入力に交差回路を縦に通った C。横に通る B は混ざらない
+  const w = new World({ width: 8, height: 7 });
+  sigBoard(w, [['lever', 0, 1], ['wire', 1, 1], ['wire', 2, 1], ['wire', 3, 1],
+               ['logic-circuit', 3, 2, 'E'], ['lamp', 4, 2],
+               ['cross-circuit', 3, 3], ['wire', 3, 4], ['lever', 3, 5],
+               ['lever', 0, 3], ['wire', 1, 3], ['wire', 2, 3], ['i-circuit', 4, 3, 'E'], ['wire', 5, 3], ['lamp', 6, 3]]);
+  const sim = new Sim(w, reg);
+  toggleLever(sim, 0, 1); sim.sync();
+  eq(poweredAt(sim, 4, 2), false, 'A だけで出た');
+  toggleLever(sim, 3, 5); sim.sync();
+  eq(poweredAt(sim, 4, 2), true, '交差回路を通った C が論理回路に入らない');
+  toggleLever(sim, 0, 1); sim.sync();
+  eq(poweredAt(sim, 4, 2), false, 'C だけで出た');
+  eq(poweredAt(sim, 6, 3), false, '縦の C が横へ漏れた');
+  toggleLever(sim, 3, 5); toggleLever(sim, 0, 3); sim.sync();
+  eq(poweredAt(sim, 6, 3), true, '横の B が通らない');
+  eq(poweredAt(sim, 4, 2), false, '横の B が論理回路に入った');
 });
 test('I回路: まっすぐだけ通し、横に並んだ別の線とはつながらない', () => {
   // y=2 の線（発電機から）と y=3 の線（電源なし）を I回路で隣り合わせても、y=3 の採掘機は動かない
@@ -1496,7 +1525,7 @@ test('簡易ドリル: 採掘機の半分の速さ（4秒に1個）で掘る', (
   eq(sim.contentsAt(2, 1).ground, [{ item: 'iron-ore', count: 2 }]);
   eq(sim.contentsAt(2, 2).ground, [{ item: 'iron-ore', count: 4 }]);
 });
-test('回路の自動生成: 条件どおりに動く配置だけを作り、「建物が最少」と「見てわかりやすい」の2つに絞る', () => {
+test('回路の自動生成: 条件どおりに動く配置だけを作り、「建物が最少」の1つに絞る（同じなら見やすいほう）', () => {
   const cases = [
     [1, [true, false]],                               // A でない
     [2, [false, false, false, true]],                 // A かつ B
@@ -1507,19 +1536,17 @@ test('回路の自動生成: 条件どおりに動く配置だけを作り、「
   for (const [n, table] of cases) {
     const res = generateCircuits(reg, n, table);
     ok(res.candidates.length > 0, `${table.map(Number).join('')} の回路ができない`);
-    ok(res.candidates.length <= 2, '候補は2つまで');
+    eq(res.candidates.length, 1, '候補は1つ');
     for (let i = 1; i < res.all.length; i++) {
       const a = res.all[i - 1], b = res.all[i];
       ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
     }
-    const fewest = res.candidates.find(c => c.kinds.includes('建物が最少'));
-    const readable = res.candidates.find(c => c.kinds.includes('見てわかりやすい'));
-    ok(fewest && readable, '2種類がそろっていない');
-    eq(fewest.count, Math.min(...res.all.map(c => c.count)), '建物がいちばん少なくない');
-    if (res.all.some(c => clarity(c).clear)) {
-      ok(clarity(readable).clear, '左にレバー・右に出力の図になっていない');
-      eq(clarity(readable).turns, Math.min(...res.all.filter(c => clarity(c).clear).map(c => clarity(c).turns)), '曲がりがいちばん少なくない');
-    }
+    const fewest = res.candidates[0];
+    eq(fewest.kinds, ['建物が最少']);
+    const pool = res.all.some(c => c.lamp) ? res.all.filter(c => c.lamp) : res.all;
+    eq(fewest.count, Math.min(...pool.map(c => c.count)), '建物がいちばん少なくない');
+    const same = pool.filter(c => c.count === fewest.count && c.area === fewest.area);
+    if (same.some(c => clarity(c).clear)) ok(clarity(fewest).clear, '同じ大きさに左レバー・右出力の図があるのに選んでいない');
     for (const c of res.candidates) {
     const levers = c.blueprint.buildings.filter(b => b.type === 'lever');
     eq(levers.length, n);
@@ -1537,32 +1564,63 @@ test('回路の自動生成: 条件どおりに動く配置だけを作り、「
   }
   eq(generateCircuits(reg, 2, [false, false, false, false]).candidates, [], 'いつも出さない回路ができた');
 });
+test('回路の自動生成: 別の線と隣り合う所は I・L・T 回路にして詰める。前は作れなかった条件も作れる', () => {
+  // 10001100（A が上の桁）は、電線だけでは線がつなぎきれなかった
+  const table = [true, false, false, false, true, true, false, false];
+  const res = generateCircuits(reg, 3, table);
+  ok(res.candidates.length > 0, '作れない');
+  const c = res.candidates[0];
+  ok(c.blueprint.buildings.some(b => ['i-circuit', 'l-circuit', 't-circuit'].includes(b.type)), 'I・L・T 回路を使っていない');
+  const w = new World({ width: c.width + 2, height: c.height + 2 });
+  pasteBlueprint(w, reg, c.blueprint, 1, 1);
+  const sim = new Sim(w, reg);
+  const on = c.input.map(() => false);
+  for (let r = 0; r < 8; r++) {
+    c.input.forEach((p, i) => { const want = ((r >> (2 - i)) & 1) === 1; if (on[i] !== want) { toggleLever(sim, p.x + 1, p.y + 1); on[i] = want; } });
+    sim.sync();
+    eq((sim.power.get(key(c.output.x + 1, c.output.y + 1)) || 0) >= 1, table[r], `${r} 行目`);
+  }
+});
 test('回路の自動生成: 電線の曲がり角を数える（まっすぐ・T字は数えない）', () => {
   const w = (x, y) => ({ type: 'wire', x, y, dir: 'N' });
   eq(countBends([w(0, 0), w(1, 0), w(2, 0)]), 0);
   eq(countBends([w(0, 0), w(1, 0), w(1, 1)]), 1);                 // L字
   eq(countBends([w(0, 0), w(1, 0), w(2, 0), w(1, 1)]), 0);        // T字
   eq(countBends([w(0, 0), w(1, 0), w(1, 1), w(2, 1), w(2, 2)]), 3);   // 階段: 角が3つ
-});
-test('回路の自動生成: 3入力で「左にレバー・右に出力」の図があれば、わかりやすいほうはその形', () => {
-  const res = generateCircuits(reg, 3, [false, true, true, false, true, false, false, true]);
-  eq(res.candidates.length, 2);
-  const r = res.candidates.find(c => c.kinds.includes('見てわかりやすい'));
-  ok(r.input.every(p => p.x === 0), 'レバーが左の辺に無い');
-  eq(r.output.x, r.width - 1, '出力が右の辺に無い');
+  eq(countBends([w(0, 0), { type: 'l-circuit', x: 1, y: 0, dir: 'S' }, w(1, 1)]), 1);   // L回路（南向き = 南と西）
+  eq(countBends([w(0, 0), { type: 'i-circuit', x: 1, y: 0, dir: 'N' }, w(1, 1)]), 0);   // 辺が向いていなければつながらない
 });
 test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ（入力2つ＋発電機）で組む', () => {
   const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
   eq(c.blueprint.buildings.filter(b => b.type === 'logic-circuit').length, 1);
 });
 test('回路の自動生成: 1か所でしか使わないレバーは回路の口へ直接置き、線を延ばさない', () => {
-  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力の電線1つ。左端にレバーを並べていた頃は 8×5=40 だった
+  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力の電線1本・ゴールのランプ1つ。左端にレバーを並べていた頃は 8×5=40 だった
   const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
-  ok(c.area <= 9, `面積 ${c.area}`);
+  ok(c.area <= 12, `面積 ${c.area}`);
   eq(c.blueprint.buildings.filter(b => b.type === 'generator').length, 1, 'レバーの隣に発電機がある');
-  eq(c.blueprint.buildings.filter(b => b.type === 'wire').length, 1);
+  ok(c.blueprint.buildings.filter(b => b.type === 'wire').length <= 1, '線はほぼ延ばさない');
   const b = c.blueprint.buildings.find(x => x.x === c.output.x && x.y === c.output.y);
-  eq(b && b.type, 'wire', '出力は回路の正面の電線');
+  eq(b && b.type, 'lamp', '出力はランプ');
+});
+test('回路の自動生成: 「または」で組めない表は、「または」を使わない組み方で作り直す（10001110）', () => {
+  const table = [...'10001110'].map(v => v === '1');
+  const res = generateCircuits(reg, 3, table);
+  eq(res.candidates.length, 1, '作れない');
+  const c = res.candidates[0];
+  ok(verifyCircuit(reg, 3, table, c.blueprint.buildings.map(b => ({ ...b, input: c.input.findIndex(p => p.x === b.x && p.y === b.y) })), c.output), '表のとおりに光らない');
+});
+test('回路の自動生成: ゴールのランプは出力の線の端に付け足し、ほかの線や回路に触れない', () => {
+  for (const [n, bits] of [[2, '0110'], [3, '01010010'], [3, '10001100'], [3, '11111110']]) {
+    for (const c of generateCircuits(reg, n, [...bits].map(v => v === '1')).candidates) {
+      const at = new Map(c.blueprint.buildings.map(x => [`${x.x},${x.y}`, x]));
+      const lamp = at.get(`${c.output.x},${c.output.y}`);
+      eq(lamp && lamp.type, 'lamp', `${bits} 出力はランプ`);
+      const nbs = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => at.get(`${c.output.x + dx},${c.output.y + dy}`)).filter(Boolean);
+      eq(nbs.length, 1, `${bits} ランプの隣は出力の線の1マスだけ`);
+      ok(nbs[0].type !== 'logic-circuit' && nbs[0].type !== 'lever', `${bits} ランプは線の端（${nbs[0].type}）`);
+    }
+  }
 });
 /** 生産ラインの設計図を貼って動かし、出口の箱に入った製品の数（WARMUP 秒後から MEASURE 秒間）を返す。 */
 function runLine(c, input, recipe, warm = 60, measure = 100) {
