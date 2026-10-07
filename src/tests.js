@@ -20,7 +20,7 @@ import { Engine } from './worker/engine.js';
 import { checkSize, countOutside, loadSave, makeSave, resizeSave } from './core/save.js';
 import { stackLimit } from './core/inventory.js';
 import { toggleLever } from './core/signal.js';
-import { generateCircuits, clarity, countBends } from './core/circuitgen.js';
+import { generateCircuits, clarity, countBends, verifyCircuit } from './core/circuitgen.js';
 import { generateLines, lineRecipes } from './core/linegen.js';
 
 const results = [];
@@ -1602,6 +1602,13 @@ test('回路の自動生成: 1か所でしか使わないレバーは回路の�
   ok(c.blueprint.buildings.filter(b => b.type === 'wire').length <= 1, '線はほぼ延ばさない');
   const b = c.blueprint.buildings.find(x => x.x === c.output.x && x.y === c.output.y);
   eq(b && b.type, 'lamp', '出力はランプ');
+});
+test('回路の自動生成: 「または」で組めない表は、「または」を使わない組み方で作り直す（10001110）', () => {
+  const table = [...'10001110'].map(v => v === '1');
+  const res = generateCircuits(reg, 3, table);
+  eq(res.candidates.length, 1, '作れない');
+  const c = res.candidates[0];
+  ok(verifyCircuit(reg, 3, table, c.blueprint.buildings.map(b => ({ ...b, input: c.input.findIndex(p => p.x === b.x && p.y === b.y) })), c.output), '表のとおりに光らない');
 });
 test('回路の自動生成: ゴールのランプは出力の線の端に付け足し、ほかの線や回路に触れない', () => {
   for (const [n, bits] of [[2, '0110'], [3, '01010010'], [3, '10001100'], [3, '11111110']]) {

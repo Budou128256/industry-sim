@@ -101,8 +101,9 @@ const synthCache = new Map();
 function fullMask(n) { return (1 << (1 << n)) - 1; }
 
 /** 働き（ビット列）の表。n 入力の全部の働き → いちばん安い組み方。 */
-function synthTable(n) {
-  if (synthCache.has(n)) return synthCache.get(n);
+function synthTable(n, allowOr = true) {
+  const ck = `${n}${allowOr ? '' : 'x'}`;
+  if (synthCache.has(ck)) return synthCache.get(ck);
   const FULL = fullMask(n);
   const best = new Map();
   for (let i = 0; i < n; i++) {
@@ -128,6 +129,7 @@ function synthTable(n) {
       }
     }
     // または: 回路の出力どうし（レバーの線は直接つながない。逆流するため）
+    if (!allowOr) { if (!changed) break; continue; }
     const outs = [...best.values()].filter(x => x.kind !== 'in');
     for (let a = 0; a < outs.length; a++) {
       for (let b = a + 1; b < outs.length; b++) {
@@ -139,17 +141,17 @@ function synthTable(n) {
     }
     if (!changed) break;
   }
-  synthCache.set(n, best);
+  synthCache.set(ck, best);
   return best;
 }
 
 /** 表 table の働きを作る組み方（無ければ null）。 */
-function synthFor(n, table) {
+function synthFor(n, table, allowOr = true) {
   let f = 0;
   table.forEach((on, r) => { if (on) f |= 1 << r; });
   if (f === 0) return null;
   if (f === fullMask(n)) return { kind: 'always' };
-  return synthTable(n).get(f) || null;
+  return synthTable(n, allowOr).get(f) || null;
 }
 
 /**
@@ -197,8 +199,8 @@ function netlist(n, root, boost = false) {
 }
 
 /** 組み方を読める式にする。 */
-export function synthText(n, table) {
-  const node = synthFor(n, table);
+export function synthText(n, table, allowOr = true) {
+  const node = synthFor(n, table, allowOr);
   if (!node) return '（いつも出さない）';
   if (node.kind === 'always') return '（いつも出す）';
   const name = x => (x.kind === 'in' ? INPUT_NAMES[x.i] : x.kind === 'const' ? (x.v === '1' ? '入' : '空') : text(x));
@@ -773,8 +775,8 @@ export function generateCircuits(registry, n, table) {
   if (!(n >= 1 && n <= MAX_INPUTS)) throw new Error(`入力は1〜${MAX_INPUTS}つ`);
   const terms = minimize(n, table);
   const text = termsText(n, terms);
-  const root = synthFor(n, table);
-  const how = synthText(n, table);
+  let root = synthFor(n, table);
+  let how = synthText(n, table);
   const candidates = [];
   const seen = new Set();
   // 型 × 強め直しの有無 × レバーの並び順（入力が3つなら6通り）を全部試す
@@ -824,12 +826,22 @@ export function generateCircuits(registry, n, table) {
     });
     return made;
   };
-  tries.forEach(attempt(false));
-  // 型に当てはめるだけでは、手で詰めた回路ほど小さくならない（ユーザーの例: 6×7=42）。
-  // 小さな枠の中に、レバーと回路をばらばらに置いてはつなぐのを、決めた時間だけ繰り返す
-  if (root && root.kind !== 'always') searchCompact(n, root, SEARCH_MS, attempt(false), tries.length * 3);
-  // それでも1つも作れないとき（レバーの電気が届かない）は、レバーを口の近くへ移す形
-  if (!candidates.length) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
+  const run = () => {
+    tries.forEach(attempt(false));
+    // 型に当てはめるだけでは、手で詰めた回路ほど小さくならない（ユーザーの例: 6×7=42）。
+    // 小さな枠の中に、レバーと回路をばらばらに置いてはつなぐのを、決めた時間だけ繰り返す
+    if (root && root.kind !== 'always') searchCompact(n, root, SEARCH_MS, attempt(false), tries.length * 3);
+    // それでも1つも作れないとき（レバーの電気が届かない）は、レバーを口の近くへ移す形
+    if (!candidates.length) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
+  };
+  run();
+  // それでも作れないときは、「または」（出力どうしを電線でつなぐ）を使わない組み方でもう一度。
+  // 「または」は出力の線が増えて交わりやすい。例: 10001110 は [A・B・C]・[Bでない]・[Cでない] の3つを
+  // 論理回路1つでまとめる形なら組める（ユーザーの依頼で手で組んだ形と同じ、2026-10-07）
+  if (!candidates.length && root && root.kind !== 'always') {
+    const alt = synthFor(n, table, false);
+    if (alt && alt !== root) { root = alt; how = synthText(n, table, false); run(); }
+  }
   for (const c of candidates) c.bends = countBends(c.blueprint.buildings);
   candidates.sort((a, b) => (a.area - b.area) || (a.count - b.count) || (a.order - b.order));
   return { terms, text, how, candidates: pickCircuits(candidates), all: candidates };
