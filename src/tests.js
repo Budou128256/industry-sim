@@ -1604,13 +1604,25 @@ test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ�
   eq(c.blueprint.buildings.filter(b => b.type === 'logic-circuit').length, 1);
 });
 test('回路の自動生成: 1か所でしか使わないレバーは回路の口へ直接置き、線を延ばさない', () => {
-  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力のランプ1つ。左端にレバーを並べていた頃は 8×5=40 だった
+  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力の電線1本・ゴールのランプ1つ。左端にレバーを並べていた頃は 8×5=40 だった
   const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
-  ok(c.area <= 9, `面積 ${c.area}`);
+  ok(c.area <= 12, `面積 ${c.area}`);
   eq(c.blueprint.buildings.filter(b => b.type === 'generator').length, 1, 'レバーの隣に発電機がある');
-  eq(c.blueprint.buildings.filter(b => b.type === 'wire').length, 0);
+  ok(c.blueprint.buildings.filter(b => b.type === 'wire').length <= 1, '線はほぼ延ばさない');
   const b = c.blueprint.buildings.find(x => x.x === c.output.x && x.y === c.output.y);
-  eq(b && b.type, 'lamp', '出力は回路の正面のランプ');
+  eq(b && b.type, 'lamp', '出力はランプ');
+});
+test('回路の自動生成: ゴールのランプは出力の線の端に付け足し、ほかの線や回路に触れない', () => {
+  for (const [n, bits] of [[2, '0110'], [3, '01010010'], [3, '10001100'], [3, '11111110']]) {
+    for (const c of generateCircuits(reg, n, [...bits].map(v => v === '1')).candidates) {
+      const at = new Map(c.blueprint.buildings.map(x => [`${x.x},${x.y}`, x]));
+      const lamp = at.get(`${c.output.x},${c.output.y}`);
+      eq(lamp && lamp.type, 'lamp', `${bits} 出力はランプ`);
+      const nbs = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => at.get(`${c.output.x + dx},${c.output.y + dy}`)).filter(Boolean);
+      eq(nbs.length, 1, `${bits} ランプの隣は出力の線の1マスだけ`);
+      ok(nbs[0].type !== 'logic-circuit' && nbs[0].type !== 'lever', `${bits} ランプは線の端（${nbs[0].type}）`);
+    }
+  }
 });
 /** 生産ラインの設計図を貼って動かし、出口の箱に入った製品の数（WARMUP 秒後から MEASURE 秒間）を返す。 */
 function runLine(c, input, recipe, warm = 60, measure = 100) {

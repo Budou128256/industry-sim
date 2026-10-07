@@ -468,6 +468,53 @@ function placeAll(L, gates, out, at, pins, sources, addPin, netY) {
   return true;
 }
 
+/**
+ * 出力の線の端に、ランプを置くマスを探す。ランプは電気を通すので、隣が出力の線の電線だけで、
+ * ほかの3辺が空いているマスにする（ほかの線・回路に触れると働きが変わる）。
+ * 出力の線（交差回路はまっすぐ抜けて先へ）のうち、いちばん右（同じなら出力の口に近い）マスの外側を選ぶ。
+ * I・L・T 回路は開いている辺の先だけ。見つからなければ null。
+ */
+function addLamp(parts, out) {
+  const at = new Map(parts.map(p => [`${p.x},${p.y}`, p]));
+  const arms = p => p.type === 'wire' ? ORDER : PATH_ARMS[p.type] ? pathArms({ arms: PATH_ARMS[p.type] }, p.dir) : null;
+  // 出力の線（出力の口からつながる電線・I・L・T 回路）
+  const net = new Set([`${out.x},${out.y}`]);
+  const queue = [out];
+  while (queue.length) {
+    const c = queue.pop();
+    const me = at.get(`${c.x},${c.y}`);
+    const mine = me ? arms(me) : ORDER;
+    if (!mine) continue;
+    for (const d of mine) {
+      const nx = c.x + STEP[d][0], ny = c.y + STEP[d][1], k = `${nx},${ny}`;
+      let nb = at.get(k), tx = nx, ty = ny;
+      // 交差回路はまっすぐ抜ける（向こう側の線も同じ出力の線）
+      while (nb && nb.type === 'cross-circuit') { tx += STEP[d][0]; ty += STEP[d][1]; nb = at.get(`${tx},${ty}`); }
+      const tk = `${tx},${ty}`;
+      if (!nb || net.has(tk)) continue;
+      const theirs = arms(nb);
+      if (!theirs || !theirs.includes(BACK[d])) continue;
+      net.add(tk); queue.push({ x: tx, y: ty });
+    }
+  }
+  let best = null;
+  for (const k of net) {
+    const [x, y] = k.split(',').map(Number);
+    const p = at.get(k);
+    const open = p ? arms(p) : ORDER;               // I・L・T 回路は開いている辺の先にだけ付けられる
+    if (!open) continue;
+    for (const d of open) {
+      const lx = x + STEP[d][0], ly = y + STEP[d][1];
+      if (at.has(`${lx},${ly}`)) continue;
+      const others = ORDER.filter(e => e !== BACK[d]).map(e => `${lx + STEP[e][0]},${ly + STEP[e][1]}`);
+      if (others.some(o => at.has(o))) continue;
+      const score = [lx, -(Math.abs(lx - out.x) + Math.abs(ly - out.y))];
+      if (!best || score[0] > best.score[0] || (score[0] === best.score[0] && score[1] > best.score[1])) best = { x: lx, y: ly, score };
+    }
+  }
+  return best && { x: best.x, y: best.y };
+}
+
 /** 型 pattern で並べてつなぐ。できなければ null。 */
 function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = false, nearOut = true, near = false, tight = false) {
   if (!root) return null;
@@ -747,8 +794,13 @@ export function generateCircuits(registry, n, table) {
       got = layoutCircuit(n, root, pattern, boost, perm, direct, false, near, tight);
       if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return null;
     }
-    // 出力のマスはランプにする（回路のゴールの目印。ユーザーの依頼 2026-10-07）。ランプも電線と同じく電気を通す
-    got.parts = got.parts.map(p => (p.x === got.out.x && p.y === got.out.y && p.type === 'wire' ? { ...p, type: 'lamp' } : p));
+    // ゴールの目印にランプを付け足す（ユーザーの依頼 2026-10-07「ここがゴールだよ」と示す）
+    const lamp = addLamp(got.parts, got.out);
+    if (lamp) {
+      const withLamp = [...got.parts, { type: 'lamp', x: lamp.x, y: lamp.y, dir: 'N' }];
+      // ランプを足しても表のとおり光るか、もう一度確かめる（だめならランプなし）
+      if (verifyCircuit(registry, n, table, withLamp, lamp)) { got.parts = withLamp; got.out = lamp; got.lamp = true; }
+    }
     // 外接する長方形に詰める
     const x0 = Math.min(...got.parts.map(p => p.x)), y0 = Math.min(...got.parts.map(p => p.y));
     const x1 = Math.max(...got.parts.map(p => p.x)), y1 = Math.max(...got.parts.map(p => p.y));
@@ -764,7 +816,7 @@ export function generateCircuits(registry, n, table) {
     candidates.push({
       pattern: pattern.id, boost, name, order,
       patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (near ? '・レバーを口の近くに' : '') + (got.tiles ? '・I/L/T回路' : '') + (perm && perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
-      tiles: got.tiles || 0,
+      tiles: got.tiles || 0, lamp: !!got.lamp,
       gates: buildings.filter(b => b.type === 'logic-circuit').length, width, height, area: width * height, count: buildings.length,
       input: got.parts.filter(p => p.type === 'lever').sort((a, b) => a.input - b.input).map(p => ({ x: p.x - x0, y: p.y - y0 })),
       output: { x: got.out.x - x0, y: got.out.y - y0 },
@@ -896,6 +948,8 @@ export function clarity(c) {
  */
 export function pickCircuits(list) {
   if (!list.length) return [];
+  // ゴールのランプが付けられた形を優先する（ユーザーの依頼 2026-10-07）
+  if (list.some(c => c.lamp)) list = list.filter(c => c.lamp);
   const pick = cmp => list.reduce((m, c) => (cmp(c, m) < 0 ? c : m));
   const fewest = pick((a, b) => a.count - b.count || a.bends - b.bends || a.area - b.area || a.order - b.order);
   const readable = pick((a, b) => {
