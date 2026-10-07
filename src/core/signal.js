@@ -14,6 +14,11 @@
  *           → 背面から入った電気を、signal.seconds（1秒）遅れて正面へ出す
  *   cross   交差回路。「Separates horizontal and vertical wires. Allows crossing wires without connecting」
  *           → 来た向きのまま、まっすぐ向こう側へだけ通す（縦と横が混ざらない）
+ *   path    I・L・T 回路（ユーザーの指摘 2026-10-07。資料 https://corekeeper.atma.gg/en/I_Circuit ほか）。
+ *           I「directs electricity in a straight line exclusively」、L「directs electricity through a right angle」、
+ *           T「takes directs electricity from 1 direction into 2 other directions」
+ *           → signal.arms（北向きのときの辺。回すと一緒に回る）の辺どうしでだけ電気を通す。ほかの辺の隣とはつながらない。
+ *             電線と同じく1マスで強さが1下がる。どの辺から入っても通す（向きの決まりは資料に無いので仮に決めた）
  * 入出力の向き・強さの下がり方は資料に無いので仮に決めた。回路から出る電気の強さは「入った強さ − 1」。
  *
  * 計算: 部品が盤面に1つでもあれば、power.js の差分計算の代わりにここで盤面全体を計算し直す。
@@ -41,6 +46,12 @@ export function makeSignal(def) {
 }
 
 const step = (c, d) => ({ x: c.x + DELTA[d].x, y: c.y + DELTA[d].y });
+
+/** I・L・T 回路が電気を通す辺（建物の向きに合わせて回す）。 */
+export function pathArms(def, dir = 'N') {
+  const turn = DIRS.indexOf(dir);
+  return (def.arms || []).map(a => DIRS[(DIRS.indexOf(a) + turn) % 4]);
+}
 
 /** 論理回路・遅延回路の入力のマス（向きごと）。 */
 export function signalInputs(b, def) {
@@ -86,8 +97,9 @@ export function computeSignals(sim, force = false) {
   if (!force && sig === sim.signalSig) return;
   sim.signalSig = sig;
 
-  // マスの種類: 'c' 電気を通す、'x' 交差回路、'g' 回路（自分では通さない）
+  // マスの種類: 'c' 電気を通す、'x' 交差回路、'g' 回路（自分では通さない）、'p' I・L・T 回路（arms の辺だけ通す）
   const kind = new Map();
+  const arms = new Map();
   const starts = [];
   const gates = [];
   // 先に部品のマスを決める（同じマスの床に電線があっても、部品の決まりが勝つ。切れたレバーの下の電線は通さない）
@@ -98,6 +110,7 @@ export function computeSignals(sim, force = false) {
     for (const c of footprint(b.x, b.y, b.size, b.dir)) {
       const k = key(c.x, c.y);
       if (s.type === 'cross') kind.set(k, 'x');
+      else if (s.type === 'path') { kind.set(k, 'p'); arms.set(k, new Set(pathArms(s, b.dir))); }
       else if (s.type === 'logic' || s.type === 'delay') kind.set(k, 'g');
       else if (s.type === 'lever') {
         kind.set(k, st && st.on ? 'c' : 'off');
@@ -126,6 +139,7 @@ export function computeSignals(sim, force = false) {
     if (up && up.to === key(g.b.x, g.b.y)) return up.level;
     const k = key(cell.x, cell.y);
     const t = kind.get(k);
+    if (t === 'p') return arms.get(k).has(OPPOSITE[cell.dir]) ? best.get(k) || 0 : 0;
     if (t !== 'c' && !starts.some(s => s.x === cell.x && s.y === cell.y)) return 0;
     return best.get(k) || 0;
   };
@@ -135,13 +149,14 @@ export function computeSignals(sim, force = false) {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const seeds = [...starts];
     for (const [, o] of gateOut) {
-      if (o.level > 0 && kind.get(o.to) === 'c') {
+      const into = kind.get(o.to) === 'c' || (kind.get(o.to) === 'p' && arms.get(o.to).has(OPPOSITE[o.dir]));
+      if (o.level > 0 && into) {
         const { x, y } = o.cell;
         seeds.push({ x, y, level: o.level });
       }
     }
     best = new Map();
-    spread(best, seeds, kind);
+    spread(best, seeds, kind, arms);
     const next = new Map();
     for (const g of gates) {
       const out = signalOutput(g.b);
@@ -154,7 +169,7 @@ export function computeSignals(sim, force = false) {
         level = delayedLevel(sim, g.st, g.def);
       }
       if (g.st) { g.st.on = level >= 1; g.st.level = level; }
-      if (level >= 1) next.set(key(g.b.x, g.b.y), { to: key(out.x, out.y), cell: out, level });
+      if (level >= 1) next.set(key(g.b.x, g.b.y), { to: key(out.x, out.y), cell: out, dir: g.b.dir || 'N', level });
     }
     const same = next.size === gateOut.size && [...next].every(([k, o]) => gateOut.has(k) && gateOut.get(k).level === o.level);
     gateOut = next;
@@ -180,8 +195,9 @@ export function recordDelays(sim) {
   }
 }
 
-/** power.js の spread と同じ。ただし交差回路は、来た向きのまままっすぐ飛び越える。 */
-function spread(best, starts, kind) {
+/** power.js の spread と同じ。ただし交差回路は、来た向きのまままっすぐ飛び越える。
+ * I・L・T 回路は、自分の辺（arms）からだけ出て、相手が I・L・T 回路ならその辺からだけ入る。 */
+function spread(best, starts, kind, arms) {
   const queue = [];
   for (const s of starts) {
     const k = key(s.x, s.y);
@@ -191,7 +207,9 @@ function spread(best, starts, kind) {
     const { x, y } = queue[i];
     const lv = best.get(key(x, y));
     if (lv <= 1) continue;
+    const own = arms.get(key(x, y));
     for (const d of DIRS) {
+      if (own && !own.has(d)) continue;
       let nx = x + DELTA[d].x, ny = y + DELTA[d].y, nlv = lv - 1;
       // 交差回路: 向こう側のマスへ（いくつ並んでいても、まっすぐ）
       while (kind.get(key(nx, ny)) === 'x' && nlv > 1) {
@@ -200,7 +218,8 @@ function spread(best, starts, kind) {
         nx += DELTA[d].x; ny += DELTA[d].y; nlv -= 1;
       }
       const nk = key(nx, ny);
-      if (kind.get(nk) !== 'c') continue;
+      const nt = kind.get(nk);
+      if (nt === 'p' ? !arms.get(nk).has(OPPOSITE[d]) : nt !== 'c') continue;
       if ((best.get(nk) || 0) >= nlv) continue;
       best.set(nk, nlv);
       queue.push({ x: nx, y: ny, level: nlv });

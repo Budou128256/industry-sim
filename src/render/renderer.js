@@ -9,6 +9,7 @@ import { minerOutput, minerTargets } from '../core/miner.js';
 import { collectorArea, collectorDef, collectorOutput } from '../core/collector.js';
 import { cycleTicks, machineDef, machineOutputCell } from '../core/machine.js';
 import { TICK_HZ } from '../core/sim.js';
+import { pathArms } from '../core/signal.js';
 
 export class Renderer {
   constructor(canvas, registry) {
@@ -251,7 +252,7 @@ export class Renderer {
       if (m) this.drawMachine(b, m);
       if (sim.miners.has(b.id)) this.drawMinerOutput(b);
       if (sim.collectors && sim.collectors.has(b.id)) this.drawCollectorArea(b);
-      if (sim.signals && sim.signals.has(b.id)) this.drawSignal(b, sim.signals.get(b.id));
+      if (sim.signals && sim.signals.has(b.id)) this.drawSignal(b, sim.signals.get(b.id), sim);
       if (b.filter) this.drawFilter(b);
       if (m && (machineDef(this.registry, b) || {}).outputFront) this.markCell(machineOutputCell(b), 'rgba(250,204,21,0.75)');
     }
@@ -316,9 +317,25 @@ export class Renderer {
   }
 
   /** レバー・回路の入り切り（左上の丸。入っていれば緑、切れていれば灰色）。 */
-  drawSignal(b, st) {
+  drawSignal(b, st, sim) {
     const ctx = this.ctx, t = this.tile;
     const { px, py } = this.toScreen(b.x, b.y);
+    const def = (this.registry.building(b.type) || {}).signal || {};
+    if (def.type === 'path') {
+      // I・L・T 回路: 電気を通す辺へ、まん中から線を引く（通っていれば明るく）
+      const on = !!(sim && sim.power && (sim.power.get(key(b.x, b.y)) || 0) >= 1);
+      ctx.strokeStyle = on ? '#facc15' : '#cbd5e1';
+      ctx.lineWidth = Math.max(2, t * 0.14);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (const d of pathArms(def, b.dir)) {
+        ctx.moveTo(px + t / 2, py + t / 2);
+        ctx.lineTo(px + t / 2 + DELTA[d].x * t / 2, py + t / 2 + DELTA[d].y * t / 2);
+      }
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+      return;
+    }
     ctx.fillStyle = st.on ? '#4ade80' : '#475569';
     ctx.strokeStyle = '#0b0e15';
     ctx.lineWidth = 1.5;

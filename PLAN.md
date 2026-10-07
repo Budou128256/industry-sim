@@ -228,6 +228,7 @@
 | 論理回路 `logic-circuit` | 3つの入力（左・右・背面）の**ちょうど2つ**に電気が来ると正面へ出す。入出力の向きは資料に無く仮に決めた | [Logic Circuit](https://corekeeper.atma.gg/en/Logic_Circuit) |
 | 遅延回路 `delay-circuit` | 背面の電気を**1秒遅れて**正面へ出す（「1秒の間隔で送り出す」を遅れと読んだ） | [Delay Circuit](https://corekeeper.atma.gg/en/Delay_Circuit) |
 | 交差回路 `cross-circuit` | 縦と横を混ぜず、来た向きのまままっすぐ通す | [Cross Circuit](https://corekeeper.atma.gg/en/Cross_Circuit) |
+| I・L・T 回路 `i-circuit` `l-circuit` `t-circuit`（2026-10-07、ユーザーの指摘） | 決まった辺どうしでだけ電気を通す。I はまっすぐ（正面と背面）、L は直角（正面と右）、T は3方向（左・正面・右）。回すと辺も回る。ほかの辺の隣とはつながらないので、**違う線を隣に並べても混ざらない**。強さは電線と同じく1マスで1下がる、どの辺から入っても通す、は資料に無いので仮に決めた | [I Circuit](https://corekeeper.atma.gg/en/I_Circuit)「directs electricity in a straight line exclusively」/ [L Circuit](https://corekeeper.atma.gg/en/L_Circuit)「directs electricity through a right angle」/ [T Circuit](https://corekeeper.atma.gg/en/T_Circuit)「takes directs electricity from 1 direction into 2 other directions」 |
 | 簡易ドリル `crude-drill` | 採掘機の半分の速さ（**4秒に1個**）。資料で簡易ドリルは毎秒3ダメージ、ドリルは2秒に12ダメージ（毎秒6）なので半分にした | [Crude Drill](https://corekeeper.atma.gg/en/Crude_Drill) |
 
 - 回路の計算（`core/signal.js`）: 部品が盤面に1つでもあると、電気の届き方を盤面全体で計算し直す（差分計算はしない）。計算し直すのは、盤面・レバー・感圧板・遅延回路の出力が変わったときだけ。回路から出る電気の強さは「入った強さ − 1」（仮）。論理回路どうしの輪は、最大8回くり返して止める

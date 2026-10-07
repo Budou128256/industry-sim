@@ -1,0 +1,23 @@
+{
+  "id": "t-circuit",
+  "name": "T回路(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#6a7a5a",
+  "directional": true,
+  "tags": [
+    "power"
+  ],
+  "note": "3方向（左・正面・右）にだけ電気を通す。背面の線とはつながらない",
+  "signal": {
+    "type": "path",
+    "arms": [
+      "W",
+      "N",
+      "E"
+    ]
+  },
+  "power": {}
+}

@@ -164,9 +164,10 @@ const EXAMPLES = [
       + '下の段の回路は、電気が届くとアーム（電気の印）の赤い × が消える。左上の丸が緑なら入っている。'
       + 'レバーは何も選んでいないときにクリックで入り切り。左から: レバー1つ、交差回路（横だけ通り縦には漏れない）、'
       + '論理回路（左・右・背面のレバーのうちちょうど2つ入ると上へ出す。最初は左と右が入っている）、'
-      + '遅延回路（レバーを入れて1秒後に右へ出る）、感圧板（アームが石炭を載せると電気を出す）',
+      + '遅延回路（レバーを入れて1秒後に右へ出る）、感圧板（アームが石炭を載せると電気を出す）。'
+      + 'いちばん下: I回路の線を2本くっつけて並べても混ざらない（上は発電機、下は切れたレバー）。その下は T回路（左から入って右と下へ）と L回路（左から入って上へ）',
     build(reg) {
-      const b = board(reg, 34, 22);
+      const b = board(reg, 34, 24);
       // 電気の幹線（上）
       b.put('generator', 1, 1).row('wire', 2, 30, 1).put('generator', 31, 1);   // 電気は24マスまでなので両端に発電機
       // 製材機
@@ -199,6 +200,11 @@ const EXAMPLES = [
       b.put('chest', 22, 16).put('inserter', 23, 16, 'W').put('generator', 23, 17)
         .put('pressure-plate', 24, 16).row('wire', 25, 26, 16).put('inserter', 27, 16, 'E');
       b.items(22, 16, 'coal', 50);
+      // I・L・T 回路（いちばん下）。I回路の線は隣どうしでも混ざらない
+      b.put('generator', 1, 19).row('i-circuit', 2, 5, 19, 'E').put('inserter', 6, 19, 'E');
+      b.put('lever', 1, 20).row('i-circuit', 2, 6, 20, 'E').put('inserter', 7, 20, 'E');
+      b.put('generator', 1, 22).put('i-circuit', 2, 22, 'E').put('t-circuit', 3, 22, 'S').put('inserter', 3, 23, 'E')
+        .put('l-circuit', 4, 22, 'W').put('inserter', 4, 21, 'E');
       return b;
     },
   },

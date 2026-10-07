@@ -1392,6 +1392,53 @@ test('レバー: 入っているあいだは発電機なしでも電源になる
   eq(poweredAt(sim, 12, 1), true, '12マス先に届かない');
   eq(poweredAt(sim, 14, 1), false, '14マス先まで届いた');
 });
+test('I回路: まっすぐだけ通し、横に並んだ別の線とはつながらない', () => {
+  // y=2 の線（発電機から）と y=3 の線（電源なし）を I回路で隣り合わせても、y=3 の採掘機は動かない
+  const w = new World({ width: 8, height: 6 });
+  // 採掘機は自分のマスの下の電線（床の層）から電気をもらう
+  sigBoard(w, [['generator', 0, 2], ['i-circuit', 1, 2, 'E'], ['i-circuit', 2, 2, 'E'], ['i-circuit', 3, 2, 'E'], ['wire', 4, 2], ['miner', 4, 2, 'N'],
+               ['i-circuit', 1, 3, 'E'], ['i-circuit', 2, 3, 'E'], ['i-circuit', 3, 3, 'E'], ['i-circuit', 4, 3, 'E'], ['wire', 5, 3], ['miner', 5, 3, 'N']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 4, 2), true, 'まっすぐ通らない');
+  eq(poweredAt(sim, 5, 3), false, '隣の線へ漏れた');
+  // 向きが横（N）だと、東西の線とはつながらない
+  const w2 = new World({ width: 8, height: 6 });
+  sigBoard(w2, [['generator', 0, 2], ['i-circuit', 1, 2, 'N'], ['wire', 2, 2], ['miner', 3, 2, 'W']]);
+  eq(poweredAt(new Sim(w2, reg), 3, 2), false, '辺の無い向きから通った');
+});
+test('L回路・T回路: 決まった辺どうしでだけ通す。回すと辺も回る', () => {
+  // L（北向き = 北と東）: 西の発電機からは入れない。東向きに回すと東と南
+  const w = new World({ width: 6, height: 6 });
+  sigBoard(w, [['generator', 1, 2], ['l-circuit', 2, 2, 'W'], ['wire', 2, 3], ['miner', 2, 4, 'N'], ['wire', 3, 2], ['miner', 4, 2, 'W']]);
+  const sim = new Sim(w, reg);                      // 西向きの L は 西と北。西から入って北へは行くが、南・東へは行かない
+  eq([poweredAt(sim, 2, 4), poweredAt(sim, 4, 2)], [false, false]);
+  const w2 = new World({ width: 6, height: 6 });
+  sigBoard(w2, [['generator', 1, 2], ['l-circuit', 2, 2, 'S'], ['wire', 2, 3], ['miner', 2, 4, 'N'], ['wire', 3, 2], ['miner', 4, 2, 'W']]);
+  const sim2 = new Sim(w2, reg);                    // 南向きの L は 南と西。西から入って南へ
+  eq([poweredAt(sim2, 2, 4), poweredAt(sim2, 4, 2)], [true, false]);
+  // T（北向き = 西・北・東）: 西から入って北と東へ。南へは行かない
+  const w3 = new World({ width: 6, height: 7 });
+  sigBoard(w3, [['generator', 1, 3], ['t-circuit', 2, 3, 'N'], ['wire', 2, 2], ['miner', 2, 1, 'S'], ['wire', 3, 3], ['miner', 4, 3, 'W'],
+                ['wire', 2, 4], ['miner', 2, 5, 'N']]);
+  const sim3 = new Sim(w3, reg);
+  eq([poweredAt(sim3, 2, 1), poweredAt(sim3, 4, 3), poweredAt(sim3, 2, 5)], [true, true, false]);
+});
+test('I回路: 論理回路の出力・入力ともつながる（辺が向いているときだけ）', () => {
+  // レバー2つ → どちらか一方だけ（論理回路）→ I回路2つ → 採掘機
+  const w = new World({ width: 8, height: 5 });
+  sigBoard(w, [['lever', 1, 1], ['generator', 0, 2], ['logic-circuit', 1, 2, 'E'], ['lever', 1, 3],
+               ['i-circuit', 2, 2, 'E'], ['i-circuit', 3, 2, 'E'], ['wire', 4, 2], ['miner', 5, 2, 'W']]);
+  const sim = new Sim(w, reg);
+  eq(poweredAt(sim, 5, 2), false);
+  toggleLever(sim, 1, 1); sim.sync();
+  eq(poweredAt(sim, 5, 2), true, '回路の出力が I回路を通らない');
+  const w2 = new World({ width: 8, height: 5 });
+  sigBoard(w2, [['lever', 1, 1], ['generator', 0, 2], ['logic-circuit', 1, 2, 'E'], ['lever', 1, 3],
+                ['i-circuit', 2, 2, 'N'], ['wire', 3, 2], ['miner', 4, 2, 'W']]);
+  const sim2 = new Sim(w2, reg);
+  toggleLever(sim2, 1, 1); sim2.sync();
+  eq(poweredAt(sim2, 4, 2), false, '辺が向いていない I回路に入った');
+});
 test('交差回路: 縦と横がつながらず、来た向きのまままっすぐ通す', () => {
   const w = new World({ width: 9, height: 9 });
   sigBoard(w, [['generator', 1, 4], ['wire', 2, 4], ['wire', 3, 4], ['cross-circuit', 4, 4], ['wire', 5, 4], ['miner', 6, 4, 'W'],
