@@ -273,7 +273,7 @@ async function genCircuit() {
   for (let r = 0; r < 1 << n; r++) table.push(!!$('cgTable').querySelector(`input[data-r="${r}"]`).checked);
   if (!table.some(Boolean)) { status('電気を出したい組み合わせに、1つ以上印を付けてください', true); return; }
   $('btnGen').disabled = true;
-  $('cgText').textContent = '作っています…（型ごとに作って、全部の組み合わせを確かめています）';
+  $('cgText').textContent = '作っています…（型ごとに作って全部の組み合わせを確かめ、「建物が最少」と「見てわかりやすい」を選んでいます）';
   $('cgList').innerHTML = '';
   try {
     const res = await state.client.call('genCircuit', { n, table });
@@ -299,14 +299,14 @@ function showCircuitList(res, n) {
     el.className = 'pal cand';
     el.title = 'クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）';
     el.innerHTML = '<span class="n"></span><span class="sz"></span>';
-    el.querySelector('.n').textContent = `${i + 1}. ${c.patternName}`;
-    el.querySelector('.sz').textContent = `${c.width}×${c.height}=${c.area}・${c.count}個`;
-    el.title = `論理回路 ${c.gates} 個。クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）`;
+    el.querySelector('.n').textContent = c.kinds.join('・');
+    el.querySelector('.sz').textContent = `${c.width}×${c.height}=${c.area}・${c.count}個・曲がり${c.bends}`;
+    el.title = `${c.patternName}。論理回路 ${c.gates} 個。クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）`;
     el.onclick = () => {
       for (const b of box.querySelectorAll('.cand')) b.classList.toggle('on', b === el);
       enterPaste(c.blueprint);
       const ins = c.input.map((p, k) => `${CG_NAMES[k]}=(${p.x},${p.y})`).join(' ');
-      status(`${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個。設計図の中で、レバー ${ins}、出力の電線 (${c.output.x},${c.output.y})。クリックで貼り付け`);
+      status(`${c.kinds.join('・')}: ${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・電線の曲がり角 ${c.bends}。設計図の中で、レバー ${ins}、出力の電線 (${c.output.x},${c.output.y})。クリックで貼り付け`);
     };
     box.appendChild(el);
   });

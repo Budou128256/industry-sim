@@ -172,7 +172,8 @@ export class Engine {
 
   /** 回路の自動生成。table は長さ 2^n の真偽の並び（A が上の桁）。盤面は変えない。 */
   op_genCircuit({ n, table }) {
-    return generateCircuits(this.registry, n, table);
+    const { all, ...res } = generateCircuits(this.registry, n, table);   // 画面には選んだ2つだけ送る
+    return res;
   }
 
   /** アームのフィルタを決める（item が null なら全部運ぶ）。アームでなければ { ok: false }。 */

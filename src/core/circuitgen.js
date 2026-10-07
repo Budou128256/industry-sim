@@ -558,7 +558,8 @@ function permutations(list) {
 
 /**
  * 真理値表 table（長さ 2^n。A が上の桁）から、型ごとの回路を作って確かめ、よい順に並べる。
- * 戻り値: { terms, text, candidates: [{ pattern, name, blueprint, width, height, area, count, input, output }] }
+ * 戻り値: { terms, text, candidates: [{ pattern, name, kinds, blueprint, width, height, area, count, bends, input, output }], all }
+ * candidates は「建物が最少」「見てわかりやすい」の2つ（同じなら1つ）。all は確かめた配置の全部（面積の小さい順）
  */
 export function generateCircuits(registry, n, table) {
   if (!(n >= 1 && n <= MAX_INPUTS)) throw new Error(`入力は1〜${MAX_INPUTS}つ`);
@@ -605,6 +606,51 @@ export function generateCircuits(registry, n, table) {
   };
   tries.forEach(attempt(false));
   if (!candidates.length) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
+  for (const c of candidates) c.bends = countBends(c.blueprint.buildings);
   candidates.sort((a, b) => (a.area - b.area) || (a.count - b.count) || (a.order - b.order));
-  return { terms, text, how, candidates };
+  return { terms, text, how, candidates: pickCircuits(candidates), all: candidates };
+}
+
+/** 電線の曲がり角の数。つながる先がちょうど2方向で、それが縦と横の電線マス。 */
+export function countBends(buildings) {
+  const at = new Map(buildings.map(b => [`${b.x},${b.y}`, b]));
+  let n = 0;
+  for (const b of buildings) {
+    if (b.type !== 'wire') continue;
+    const h = [[-1, 0], [1, 0]].filter(([dx, dy]) => at.has(`${b.x + dx},${b.y + dy}`)).length;
+    const v = [[0, -1], [0, 1]].filter(([dx, dy]) => at.has(`${b.x + dx},${b.y + dy}`)).length;
+    if (h === 1 && v === 1) n++;
+  }
+  return n;
+}
+
+/**
+ * 見て仕組みがわかりやすいか。左の辺にレバーが A・B・C の順に上から並び、出力が右の辺にある
+ * （左から右へ信号が流れる図）なら clear。そのうえで、曲がり角と交差の数が少ないほどよい。
+ */
+export function clarity(c) {
+  const ins = c.input;
+  const clear = ins.every(p => p.x === 0) && ins.every((p, i) => i === 0 || ins[i - 1].y < p.y) && c.output.x === c.width - 1;
+  const crosses = c.blueprint.buildings.filter(b => b.type === 'cross-circuit').length;
+  return { clear, turns: c.bends + crosses };
+}
+
+/**
+ * 候補を2種類だけに絞る（ユーザーの希望 2026-10-07「型が増えても結局はこの二つ」）:
+ * 「建物が最少」と「見てわかりやすい」（曲がりが最少。ユーザーの言葉では「視覚的に仕組みがわかりやすい」）。
+ * わかりやすいほうは、左にレバー・右に出力の図になっている物を先に、曲がり角＋交差 → 建物 → 面積の少ない順。
+ * 同じ配置なら1つにまとめる。
+ */
+export function pickCircuits(list) {
+  if (!list.length) return [];
+  const pick = cmp => list.reduce((m, c) => (cmp(c, m) < 0 ? c : m));
+  const fewest = pick((a, b) => a.count - b.count || a.bends - b.bends || a.area - b.area || a.order - b.order);
+  const readable = pick((a, b) => {
+    const x = clarity(a), y = clarity(b);
+    return (y.clear - x.clear) || (x.turns - y.turns) || a.count - b.count || a.area - b.area || a.order - b.order;
+  });
+  const out = [{ ...fewest, kinds: ['建物が最少'] }];
+  if (readable === fewest) out[0].kinds.push('見てわかりやすい');
+  else out.push({ ...readable, kinds: ['見てわかりやすい'] });
+  return out;
 }
