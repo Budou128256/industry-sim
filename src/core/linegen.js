@@ -4,13 +4,10 @@
  * 設計図を、型ごとに作る。回路の自動生成（circuitgen.js）と同じく、盤面に置いてシミュレーションで確かめ、
  * 外接する長方形の面積が小さい順、同じなら置く数が少ない順に並べる（ユーザーの指定）。
  *
- * 材料の取り方（ユーザーの選択「両方」）:
- *   ore   鉱脈から掘る。鉱脈は 2x2 の塊（Core Keeper）で、ドリルを塊の下の辺に並べる。
- *         設計図の resources に鉱脈を入れる（貼ると鉱脈も置く）
- *   chest 材料の箱から。人が箱に材料を入れる
+ * いつも「材料の箱から始まり、出口の箱で終わる」（ユーザーの判断 2026-10-07。鉱脈から掘る形は
+ * Core Keeper でも一般の配置でも始まりにならないので、材料の取り方を選ぶ欄ごとやめた）。
  *
- * 型（ユーザーの判断で1つ）: まとめて掘った材料（または箱の中身）を、スプリッターを2つに分ける木で、
- *   機械に均等に配る。スプリッターは1個ずつの物も交互に分けるので、ドリルは必要な数だけで足りる。
+ * 型（ユーザーの判断で1つ）: 材料の箱の中身を、スプリッターを2つに分ける木で、機械に均等に配る。
  *   製品はベルトで集め、左端の出口の箱へ。材料の箱と出口の箱は、外接する長方形の同じ辺（左）に並ぶ
  *
  * このシミュレーターの決まりで、配り方に気をつけた点:
@@ -32,8 +29,6 @@ import { containerTotal } from './inventory.js';
 import { BLUEPRINT_FORMAT, BLUEPRINT_VERSION } from './blueprint.js';
 
 export const MAX_MACHINES = 16;
-export const SOURCES = { ore: '鉱脈から掘る', chest: '材料の箱から' };
-const DRILLS = ['miner', 'crude-drill'];
 const WARMUP = 60, MEASURE = 100;          // 確かめるとき: 最初の 60 秒は数えず、次の 100 秒の出来高を見る
 
 /** 作れる製品の一覧（材料が1種類のレシピ）。 */
@@ -44,15 +39,9 @@ export function lineRecipes(registry) {
     if (ins.length !== 1) continue;
     const machines = (r.machines || []).filter(m => registry.building(m));
     if (!machines.length) continue;
-    const item = registry.item(ins[0]);
-    out.push({ id: r.id, name: r.name || r.id, input: ins[0], ore: !!(item && item.resource), machines });
+    out.push({ id: r.id, name: r.name || r.id, input: ins[0], machines });
   }
   return out;
-}
-
-/** 掘るのに使えるドリル。 */
-export function lineDrills(registry) {
-  return DRILLS.filter(id => registry.building(id) && registry.building(id).miner);
 }
 
 class Plan {
@@ -63,7 +52,6 @@ class Plan {
     this.wires = new Set();   // 電線のマス
     this.keep = new Set();    // 何も置かないマス（床に物が落ちるところ）
     this.keepY = new Map();
-    this.ores = [];           // 鉱脈のマス
     this.inputs = [];         // 材料を入れる箱のマス
     this.outputs = [];        // 製品が入る箱のマス
   }
@@ -81,7 +69,7 @@ class Plan {
     this.parts.push({ type: 'wire', x, y, dir: 'N' });
   }
   bounds() {
-    const cells = [...this.parts, ...this.ores];
+    const cells = this.parts;
     const xs = cells.map(c => c.x), ys = cells.map(c => c.y);
     return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
   }
@@ -108,8 +96,7 @@ function planTree(P, o) {
   const k = o.count;
   const m = Math.ceil(Math.log2(k));
   const L = 1 << m;                                        // 葉（配り先）の数
-  const D = o.source === 'ore' ? o.drills : 0;
-  const Xr = o.source === 'chest' && L === 1 ? 0 : Math.max(D, 2);   // 根のスプリッターの列（箱から1台なら、箱が左端）
+  const Xr = L === 1 ? 0 : 2;                              // 根のスプリッターの列（1台なら、材料の箱が左端）
   const Xl = Xr + m - 1;                                   // 葉へ出すスプリッターの列（k=1 なら Xr-1）
   const leafRow = i => (L === 1 ? 0 : 3 * (i >> 1) + (i & 1) * 2);
   // 木（葉の範囲 [lo, hi)）。物が西から入ってくるマス { row, x } を返す。
@@ -129,16 +116,7 @@ function planTree(P, o) {
   };
   const root = L === 1 ? 0 : node(0, L, 0).row;
   // 入口
-  if (o.source === 'ore') {
-    // 鉱脈は 2x2 の塊（Core Keeper。data/game.json の veinSize）。ドリルは塊の下の辺に並べて上を掘る
-    const vs = Math.max(1, (P.registry.game.defaults || {}).veinSize || 1);
-    const blocks = Math.ceil(D / vs);
-    for (let j = 0; j < blocks; j++) for (let dy = 0; dy < vs; dy++) for (let dx = 0; dx < vs; dx++) P.ores.push({ x: j * vs + dx, y: -2 - vs + dy });
-    for (let i = 0; i < D; i++) P.put(o.drill, i, -2, 'N');
-    for (let x = 0; x < Xr - 1; x++) P.put('belt', x, -1, 'E');
-    for (let y = -1; y < root; y++) P.put('belt', Xr - 1, y, 'S');
-    P.put('belt', Xr - 1, root, 'E');                      // 根のスプリッターへ（k=1 なら機械の手前の落ちるマスへ）
-  } else if (L > 1) {
+  if (L > 1) {
     P.put('chest', Xr - 2, root); P.inputs.push({ x: Xr - 2, y: root });
     P.put('inserter', Xr - 1, root, 'W');                  // 箱から取り、スプリッターへ入れる
   }
@@ -146,7 +124,7 @@ function planTree(P, o) {
   let xo = 0, rows = [];
   for (let i = 0; i < k; i++) {
     const r = leafRow(i);
-    const chestIn = o.source === 'chest' && L === 1;
+    const chestIn = L === 1;
     xo = unitE(P, o.machine, (L === 1 ? Xr : Xl + 1), r, chestIn);
     rows.push(r);
   }
@@ -180,7 +158,7 @@ function planPower(P, gens) {
   const need = P.parts.filter(p => needsPower(reg, p.type));
   if (!need.length) return true;
   const b = P.bounds();
-  const free = (x, y) => !P.obj.has(key(x, y)) && !P.keep.has(key(x, y)) && !P.ores.some(o => o.x === x && o.y === y);
+  const free = (x, y) => !P.obj.has(key(x, y)) && !P.keep.has(key(x, y));
   // 発電機の場所: 外接する長方形の中の空きマス（無ければ1マス外側）から、建物までの最大距離が小さい所
   const cand = [];
   for (let y = b.y0 - 1; y <= b.y1 + 1; y++) for (let x = b.x0 - 1; x <= b.x1 + 1; x++) if (free(x, y)) cand.push({ x, y, out: x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1 });
@@ -264,7 +242,6 @@ export function verifyLine(registry, o, P) {
     const c = at(p);
     if (!place(w, registry.building(p.type), c.x, c.y, p.dir)) return { ok: false, why: `置けない ${p.type}` };
   }
-  for (const c of P.ores) { const q = at(c); w.setResource(q.x, q.y, o.input); }
   const sim = new Sim(w, registry);
   for (const c of P.inputs) { const q = at(c); sim.addItems(q.x, q.y, o.input, Math.ceil(o.count * 40 / P.inputs.length)); }
   sim.sync();
@@ -289,8 +266,8 @@ export function verifyLine(registry, o, P) {
 
 /**
  * 生産ラインを型ごとに作って確かめ、よい順に並べる。
- * opts: { recipe: レシピ id, machine: 建物 id, count: 台数, source: 'ore'|'chest', drill: ドリルの id }
- * 戻り値: { target, need, candidates: [{ pattern, patternName, name, width, height, area, count, perMin, drills, generators, ore, inputs, outputs, blueprint }], rejected }
+ * opts: { recipe: レシピ id, machine: 建物 id, count: 台数 }
+ * 戻り値: { target, need, candidates: [{ pattern, patternName, name, width, height, area, count, perMin, generators, inputs, outputs, blueprint }], rejected }
  */
 export function generateLines(registry, opts) {
   const recipe = registry.recipe(opts.recipe);
@@ -300,9 +277,7 @@ export function generateLines(registry, opts) {
   const perCycle = Object.values(recipe.outputs).reduce((a, v) => a + v, 0);
   const target = count * perCycle * 60 / recipe.craftTime;            // 1分あたり
   const needPerMachine = recipe.inputs[input] / recipe.craftTime;     // 1秒あたり
-  const drill = opts.drill || lineDrills(registry)[0];
-  const drillRate = opts.source === 'ore' ? (registry.building(drill).miner.amount || 1) / registry.building(drill).miner.periodSeconds : 0;
-  const o = { ...opts, recipe, input, count, target, drill };
+  const o = { ...opts, recipe, input, count, target };
   const candidates = [], rejected = [];
   let order = 0;
   for (const pat of LINE_PATTERNS) {
@@ -310,16 +285,12 @@ export function generateLines(registry, opts) {
       for (let gens = 1; gens <= 4; gens++) {
         const P = new Plan(registry);
         const oo = { ...o, collect };
-        if (pat.id === 'tree' && opts.source === 'ore') {
-          const L = 1 << Math.ceil(Math.log2(count));
-          oo.drills = Math.max(1, Math.ceil(L * needPerMachine / drillRate - 1e-9));
-        }
         let ok;
         try { ok = pat.plan(P, oo); } catch (e) { ok = false; }
         if (!ok) break;
         if (!planPower(P, gens)) continue;
         const v = verifyLine(registry, oo, P);
-        const label = pat.name + (collect === 'chests' ? '・出口の箱を機械ごとに' : '');
+        const label = pat.name;
         if (!v.ok) {
           if (v.unpowered) continue;                                  // 電気が足りない → 発電機を足して試す
           rejected.push({ patternName: label, perMin: v.perMin, why: v.why || '出来高が足りない' });
@@ -335,11 +306,9 @@ export function generateLines(registry, opts) {
           pattern: pat.id, collect, patternName: label, name, order: order++,
           width, height, area: width * height, count: buildings.length,
           perMin: v.perMin, target,
-          drills: buildings.filter(x => DRILLS.includes(x.type)).length,
           generators: buildings.filter(x => x.type === 'generator').length,
-          ore: P.ores.map(shift), inputs: P.inputs.map(shift), outputs: P.outputs.map(shift),
-          blueprint: { format: BLUEPRINT_FORMAT, version: BLUEPRINT_VERSION, name, width, height, buildings,
-            ...(P.ores.length ? { resources: P.ores.map(c => ({ ...shift(c), item: input })) } : {}) },
+          inputs: P.inputs.map(shift), outputs: P.outputs.map(shift),
+          blueprint: { format: BLUEPRINT_FORMAT, version: BLUEPRINT_VERSION, name, width, height, buildings },
         });
         break;
       }

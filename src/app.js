@@ -12,7 +12,7 @@ import { Registry } from './core/registry.js';
 import { canPlace, pathCells } from './core/placement.js';
 import { rotateCW } from './core/grid.js';
 import { TICK_HZ } from './core/sim.js';
-import { lineDrills, lineRecipes } from './core/linegen.js';
+import { lineRecipes } from './core/linegen.js';
 import { Renderer } from './render/renderer.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
@@ -317,7 +317,7 @@ function showCircuitList(res, n) {
 
 const nameOf = id => ((state.registry.building(id) || state.registry.item(id) || state.registry.recipe(id) || {}).name || id);
 
-/** 作る物・機械・ドリルの選び肢を作る。材料が鉱脈でない物は「鉱脈から掘る」を選べない。 */
+/** 作る物・機械の選び肢を作る。材料はいつも材料の箱から（ユーザーの判断 2026-10-07）。 */
 function setupLineForm() {
   const recipes = lineRecipes(state.registry);
   const rs = $('lgRecipe');
@@ -327,13 +327,6 @@ function setupLineForm() {
     o.value = r.id; o.textContent = `${nameOf(r.id)}（材料: ${nameOf(r.input)}）`;
     rs.appendChild(o);
   }
-  const ds = $('lgDrill');
-  ds.innerHTML = '';
-  for (const id of lineDrills(state.registry)) {
-    const d = state.registry.building(id), o = document.createElement('option');
-    o.value = id; o.textContent = `${nameOf(id)}（${d.miner.periodSeconds}秒に${d.miner.amount || 1}個）`;
-    ds.appendChild(o);
-  }
   const sync = () => {
     const r = recipes.find(x => x.id === rs.value);
     if (!r) return;
@@ -341,14 +334,9 @@ function setupLineForm() {
     ms.innerHTML = '';
     for (const m of r.machines) { const o = document.createElement('option'); o.value = m; o.textContent = nameOf(m); ms.appendChild(o); }
     if (r.machines.includes(keep)) ms.value = keep;
-    const ore = $('lgSource').querySelector('option[value="ore"]');
-    ore.disabled = !r.ore;
-    if (!r.ore) $('lgSource').value = 'chest';
-    $('lgDrillRow').style.display = $('lgSource').value === 'ore' ? '' : 'none';
     $('lgList').innerHTML = ''; $('lgText').textContent = '';
   };
   rs.onchange = sync;
-  $('lgSource').onchange = sync;
   sync();
 }
 
@@ -356,7 +344,6 @@ async function genLine() {
   const opts = {
     recipe: $('lgRecipe').value, machine: $('lgMachine').value,
     count: Math.max(1, Math.min(16, Number($('lgCount').value) || 1)),
-    source: $('lgSource').value, drill: $('lgDrill').value,
   };
   $('lgCount').value = opts.count;
   $('btnLine').disabled = true;
@@ -389,17 +376,14 @@ function showLineList(res, opts) {
     el.innerHTML = '<span class="n"></span><span class="sz"></span>';
     el.querySelector('.n').textContent = `${i + 1}. ${c.patternName}`;
     const parts = [`${c.width}×${c.height}=${c.area}`, `${c.count}個`];
-    if (opts.source === 'ore') parts.push(`ドリル${c.drills}`);
     parts.push(`発電機${c.generators}`);
     el.querySelector('.sz').textContent = parts.join('・');
     el.title = `動かして測った出来高: 毎分 ${fmt(c.perMin)} 個。クリックで下見して貼り付け（Ctrl+クリックで上書き、R で回す）`;
     el.onclick = () => {
       for (const b of box.querySelectorAll('.cand')) b.classList.toggle('on', b === el);
       enterPaste(c.blueprint);
-      const where = opts.source === 'ore'
-        ? 'ドリルの上に 2x2 の鉱脈も一緒に置きます'
-        : `材料の箱 ${c.inputs.length} 個に ${nameOf(state.registry.recipe(opts.recipe) ? Object.keys(state.registry.recipe(opts.recipe).inputs)[0] : '')} を入れてください`;
-      status(`${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・毎分 ${fmt(c.perMin)} 個（測定）。${where}。製品は出口の箱 ${c.outputs.length} 個へ。クリックで貼り付け`);
+      const where = `左の辺の材料の箱に ${nameOf(Object.keys(state.registry.recipe(opts.recipe).inputs)[0])} を入れてください`;
+      status(`${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・毎分 ${fmt(c.perMin)} 個（測定）。${where}。製品は左下の出口の箱へ。クリックで貼り付け`);
     };
     box.appendChild(el);
   });

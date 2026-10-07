@@ -1511,39 +1511,33 @@ function runLine(c, input, recipe, warm = 60, measure = 100) {
   eq(sim.unpowered.size, 0, '電気が届いていない建物がある');
   return count() - c0;
 }
-test('機械の自動配置: 鉱脈から・箱から、どの候補も貼ると目標どおりに作る。面積の小さい順', () => {
-  for (const source of ['ore', 'chest']) {
-    const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 4, source, drill: 'miner' });
-    ok(res.candidates.length >= 1, `${source} の候補が無い`);
-    eq(res.target, 24);                                   // 炉4台 × 10秒に1個 = 毎分24個
+test('機械の自動配置: 材料の箱から出口の箱まで、貼ると目標どおりに作る。面積の小さい順', () => {
+  for (const count of [1, 2, 4, 5]) {
+    const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count });
+    ok(res.candidates.length >= 1, `${count} 台の候補が無い`);
+    eq(res.target, count * 6);                            // 炉1台 × 10秒に1個 = 毎分6個
     for (let i = 1; i < res.candidates.length; i++) {
       const a = res.candidates[i - 1], b = res.candidates[i];
       ok(a.area < b.area || (a.area === b.area && a.count <= b.count), '並び順が違う');
     }
     for (const c of res.candidates) {
-      if (source === 'ore') eq((c.blueprint.resources || []).length, Math.ceil(c.drills / 2) * 4, '鉱脈（2x2 の塊）が設計図に無い');
+      eq(c.inputs.length, 1, '材料の箱は1つ'); eq(c.outputs.length, 1, '出口の箱は1つ');
+      ok(!c.blueprint.buildings.some(b => b.type === 'miner' || b.type === 'crude-drill'), 'ドリルがある');
+      ok(!(c.blueprint.resources || []).length, '鉱脈がある');
       const made = runLine(c, 'iron-ore', 'iron-plate');
-      ok(made >= 36, `${source} ${c.patternName}: 100秒で ${made} 個`);   // 目標 40 個の 9 割
+      ok(made >= count * 10 * 0.9, `${count} 台 ${c.patternName}: 100秒で ${made} 個`);
     }
   }
 });
-test('機械の自動配置: スプリッターで配るので、ドリルは必要な数だけ。鉱脈は 2x2 の塊', () => {
-  const res = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 8, source: 'ore', drill: 'miner' });
-  const c = res.candidates[0];
-  eq(c.drills, 2);                                        // 採掘機は2秒に1個、炉8台で毎秒0.8個 → 2台
-  eq(c.blueprint.resources.length, 4);                    // 2x2 の塊が1つ（ドリル2台がその下の辺に並ぶ）
-  const xs = c.blueprint.resources.map(r => r.x), ys = c.blueprint.resources.map(r => r.y);
-  eq(Math.max(...xs) - Math.min(...xs), 1); eq(Math.max(...ys) - Math.min(...ys), 1);
-});
 test('機械の自動配置: 材料の箱と出口の箱は、外接する長方形の同じ辺（左）に並ぶ', () => {
   for (const count of [1, 3, 4, 6]) {
-    const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count, source: 'chest' }).candidates[0];
+    const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count }).candidates[0];
     ok(c, `${count} 台の候補が無い`);
     for (const p of [...c.inputs, ...c.outputs]) eq(p.x, 0, `${count} 台: 箱が左の辺に無い`);
   }
 });
 test('機械の自動配置: 台数が2の累乗でなくても、余った出口を作らない（床に材料がこぼれない）', () => {
-  const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 3, source: 'chest' }).candidates[0];
+  const c = generateLines(reg, { recipe: 'iron-plate', machine: 'furnace', count: 3 }).candidates[0];
   const w = new World({ width: c.width + 4, height: c.height + 4 });
   pasteBlueprint(w, reg, c.blueprint, 2, 2);
   const sim = new Sim(w, reg);
@@ -1551,12 +1545,10 @@ test('機械の自動配置: 台数が2の累乗でなくても、余った出�
   for (let i = 0; i < 20; i++) sim.stepSecond();
   eq(sim.totals().onGround, 0, '床に物がこぼれた');
 });
-test('機械の自動配置: 製品が何種類もある粉砕機・電気を使う製材機も組める。材料が鉱脈でない物は掘れない', () => {
-  const list = lineRecipes(reg);
-  ok(list.find(r => r.id === 'iron-plate').ore);
-  ok(!list.find(r => r.id === 'plank').ore);
+test('機械の自動配置: 製品が何種類もある粉砕機・電気を使う製材機も組める', () => {
+  ok(lineRecipes(reg).find(r => r.id === 'plank'));
   for (const [recipe, machine, input] of [['scrap-a', 'shredder', 'scrap-a'], ['plank', 'table-saw', 'wood']]) {
-    const res = generateLines(reg, { recipe, machine, count: 3, source: 'chest' });
+    const res = generateLines(reg, { recipe, machine, count: 3 });
     ok(res.candidates.length > 0, `${recipe} の候補が無い`);
     const c = res.candidates[0];
     const perCycle = Object.values(reg.recipe(recipe).outputs).reduce((a, v) => a + v, 0);
