@@ -5,7 +5,8 @@
  *           「currently (v1.0.0.8) levers can power any electrical device, including drills」
  *           → **入っているあいだ電源になる**（発電機は要らない。ユーザーの指摘 2026-10-07）。強さは signal.source
  *             （資料に数は無い。ユーザーが教えてくれたゲームの値で 12＝発電機の半分。2026-10-07）。
- *             入っているときは電線と同じく電気も通す。置いた直後は切れている。クリックで入り切り
+ *             ほかの電気は通さない（隣に発電機を置いても出る電気は強さ12のまま。ユーザーの指摘 2026-10-07）。
+ *             置いた直後は切れている。クリックで入り切り
  *   plate   感圧板。「Generates a low amount of electricity」「stepped on by the player」
  *           → 人はいないので、**そのマスの床に物があるあいだ**電源になる。強さは signal.source（仮に 5）
  *   logic   論理回路。「Electricity can move through the circuit when it receives electricity on exactly 2 out of 3 inputs」
@@ -113,7 +114,7 @@ export function computeSignals(sim, force = false) {
       else if (s.type === 'path') { kind.set(k, 'p'); arms.set(k, new Set(pathArms(s, b.dir))); }
       else if (s.type === 'logic' || s.type === 'delay') kind.set(k, 'g');
       else if (s.type === 'lever') {
-        kind.set(k, st && st.on ? 'c' : 'off');
+        kind.set(k, 'off');                // 電源だが、ほかの電気は通さない（隣に発電機があっても強さは変わらない）
         if (st && st.on) starts.push({ x: c.x, y: c.y, level: (s.source || 12) + 1 });
       }
       else if (s.type === 'plate') {

@@ -1363,13 +1363,15 @@ test('粉砕機: スクラップ用アイテム1個を10秒で2〜3種類にし�
 /* ---- レバー・感圧板・回路（signal.js） ---- */
 const sigBoard = (w, list) => { for (const [type, x, y, dir = 'N'] of list) ok(place(w, reg.building(type), x, y, dir), `${type} を (${x},${y}) に置けない`); };
 const poweredAt = (sim, x, y) => { sim.sync(); return !sim.unpowered.has(sim.world.at(x, y).id); };
-test('レバー: 入っているときだけ電気を通す。置いた直後は切れている。保存しても入り切りが残る', () => {
+test('レバー: 入っているときだけ電気を出す。置いた直後は切れている。保存しても入り切りが残る', () => {
   const w = new World({ width: 8, height: 3 });
   sigBoard(w, [['generator', 0, 1], ['lever', 1, 1], ['wire', 2, 1], ['miner', 3, 1, 'W']]);
   const sim = new Sim(w, reg);
   eq(poweredAt(sim, 3, 1), false, '切れているのに届いた');
   eq(toggleLever(sim, 1, 1), true);
   eq(poweredAt(sim, 3, 1), true, '入れたのに届かない');
+  sim.sync();
+  eq(sim.power.get(key(2, 1)), 12, '隣の発電機の電気を通した（レバーは強さ12のまま）');
   const saved = JSON.parse(JSON.stringify({ world: w, sim }));
   const w2 = World.fromJSON(saved.world, reg);
   const back = Sim.fromJSON(saved.sim, w2, reg);
