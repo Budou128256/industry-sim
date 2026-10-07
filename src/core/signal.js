@@ -141,15 +141,26 @@ export function computeSignals(sim, force = false) {
     const k = key(cell.x, cell.y);
     const t = kind.get(k);
     if (t === 'p') return arms.get(k).has(OPPOSITE[cell.dir]) ? best.get(k) || 0 : 0;
+    // 交差回路: 回路の方へまっすぐ来た電気だけを入力にする（ユーザーの設計図 2026-10-07 で、交差回路から論理回路へ入れている）
+    if (t === 'x') { const c = crossLv.get(k); return c ? c[cell.dir === 'E' || cell.dir === 'W' ? 'h' : 'v'] : 0; }
     if (t !== 'c' && !starts.some(s => s.x === cell.x && s.y === cell.y)) return 0;
     return best.get(k) || 0;
   };
 
   let best = new Map();
+  let crossLv = new Map();          // 交差回路のマス -> { h: 横の強さ, v: 縦の強さ }
   let gateOut = new Map();                 // 回路のマスの鍵 -> { to: 正面のマスの鍵, level }
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const seeds = [...starts];
     for (const [, o] of gateOut) {
+      // 出力の先が交差回路なら、まっすぐ通り抜けた先のマスへ
+      if (kind.get(o.to) === 'x' && o.level > 1) {
+        let { x, y } = o.cell, lv = o.level;
+        while (kind.get(key(x, y)) === 'x' && lv > 1) { x += DELTA[o.dir].x; y += DELTA[o.dir].y; lv -= 1; }
+        const t = kind.get(key(x, y));
+        if (t === 'c' || (t === 'p' && arms.get(key(x, y)).has(OPPOSITE[o.dir]))) seeds.push({ x, y, level: lv });
+        continue;
+      }
       const into = kind.get(o.to) === 'c' || (kind.get(o.to) === 'p' && arms.get(o.to).has(OPPOSITE[o.dir]));
       if (o.level > 0 && into) {
         const { x, y } = o.cell;
@@ -157,7 +168,8 @@ export function computeSignals(sim, force = false) {
       }
     }
     best = new Map();
-    spread(best, seeds, kind, arms);
+    crossLv = new Map();
+    spread(best, seeds, kind, arms, crossLv);
     const next = new Map();
     for (const g of gates) {
       const out = signalOutput(g.b);
@@ -198,7 +210,7 @@ export function recordDelays(sim) {
 
 /** power.js の spread と同じ。ただし交差回路は、来た向きのまままっすぐ飛び越える。
  * I・L・T 回路は、自分の辺（arms）からだけ出て、相手が I・L・T 回路ならその辺からだけ入る。 */
-function spread(best, starts, kind, arms) {
+function spread(best, starts, kind, arms, crossLv = null) {
   const queue = [];
   for (const s of starts) {
     const k = key(s.x, s.y);
@@ -216,6 +228,11 @@ function spread(best, starts, kind, arms) {
       while (kind.get(key(nx, ny)) === 'x' && nlv > 1) {
         const ck = key(nx, ny);
         if ((best.get(ck) || 0) < nlv) best.set(ck, nlv);   // 表示用（ここからは広げない）
+        if (crossLv) {                                        // 向きごとの強さ（隣の論理回路の入力に使う）
+          const ax = d === 'E' || d === 'W' ? 'h' : 'v';
+          const c = crossLv.get(ck) || { h: 0, v: 0 };
+          if (c[ax] < nlv) { c[ax] = nlv; crossLv.set(ck, c); }
+        }
         nx += DELTA[d].x; ny += DELTA[d].y; nlv -= 1;
       }
       const nk = key(nx, ny);

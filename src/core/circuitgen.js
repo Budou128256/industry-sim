@@ -291,12 +291,14 @@ class Layout {
     this.W = width; this.H = height;
     this.occ = new Map();     // key -> { t: 'net'|'pin'|'gate'|'gen'|'lever'|'res'|'cross', n? }
     this.parts = [];          // 置く建物 { type, x, y, dir }
-    this.link = new Map();    // 回路の口のマス -> 回路のある向き（I・L・T 回路にするとき、その辺を開ける）
+    this.link = new Map();    // 回路の口のマス -> 回路のある向きの集まり（I・L・T 回路にするとき、その辺を開ける）
     this.tight = false;       // 別の線と隣り合ってよいか（隣るマスは、あとで I・L・T 回路にする）
   }
   in(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
   get(x, y) { return this.occ.get(key(x, y)); }
   set(x, y, v) { this.occ.set(key(x, y), v); }
+  /** 回路の口のマスに、回路のある向きを足す（1マスが2つの回路の口を兼ねることがある）。 */
+  addLink(x, y, d) { const k = key(x, y); if (!this.link.has(k)) this.link.set(k, new Set()); this.link.get(k).add(d); }
   /** 空いているか、空き予約（何も置かない）か。 */
   free(x, y) { return this.in(x, y) && !this.get(x, y); }
   reserve(x, y) { if (this.in(x, y) && !this.get(x, y)) this.set(x, y, { t: 'res' }); }
@@ -305,12 +307,13 @@ class Layout {
   canWire(x, y, n, ignore = null) {
     if (!this.in(x, y)) return false;
     const o = this.get(x, y);
-    if (o && !((o.t === 'pin' || o.t === 'net') && o.n === n)) return false;
+    if (o && !((o.t === 'pin' || o.t === 'net') && o.n === n) && o.t !== 'zero') return false;
     for (const [dx, dy] of DIRS4) {
       if (ignore && ignore.x === x + dx && ignore.y === y + dy) continue;   // 交差回路になるマス
       const nb = this.get(x + dx, y + dy);
-      if (!nb || nb.t === 'res' || nb.t === 'cross') continue;
-      if (nb.t === 'gate') { if (!(o && o.t === 'pin')) return false; continue; }   // 回路の隣は決めた口だけ
+      if (!nb || nb.t === 'res' || nb.t === 'cross' || nb.t === 'zero') continue;
+      // 回路の隣は決めた口だけ。ただし「空き」の辺のマスは、回路の方を開けない I・L・T 回路で通る
+      if (nb.t === 'gate') { if (!(o && (o.t === 'pin' || o.t === 'zero'))) return false; continue; }
       if (nb.t === 'gen') return false;
       if (nb.n !== n && !this.tight) return false;
     }
@@ -382,6 +385,89 @@ class Layout {
   }
 }
 
+/**
+ * 探索（searchCompact）用: 決めた位置に回路を全部置いてから、口を割り当てる。型と違い、回路どうしが隣り合ってよい
+ * （ユーザーの設計図 2026-10-07 にならう）:
+ *   - 回路の正面が別の回路なら、出力をその回路の背面の入力へ直接入れる（線が要らない）
+ *   - 回路の横・背面が別の回路の本体なら、そこは「空き」の入力（電気が来ない）として使う
+ * 割り当てられなければ false。
+ */
+function placeAll(L, gates, out, at, pins, sources, addPin, netY) {
+  for (const g of gates) {
+    const { x, y } = at[g.id];
+    if (!L.in(x - 1, y - 1) || !L.in(x + 1, y + 1) || L.get(x, y)) return false;
+    L.set(x, y, { t: 'gate', g: g.id }); L.parts.push({ type: 'logic-circuit', x, y, dir: 'E' });
+    g.at = { x, y };
+  }
+  const bodyAt = (x, y) => { const o = L.get(x, y); return o && o.t === 'gate' ? gates.find(h => h.id === o.g) : null; };
+  const users = net => gates.filter(h => h.sig.includes(net));
+  // 正面が回路: 出力を直接入れる
+  const fed = new Map();
+  for (const g of gates) {
+    const h = bodyAt(g.at.x + 1, g.at.y);
+    if (!h) continue;
+    const us = users(g.out);
+    if (g.out === out || us.length !== 1 || us[0] !== h || h.sig.filter(v => v === g.out).length !== 1) return false;
+    fed.set(h.id, g.out);
+    g.direct = true;
+  }
+  for (const g of gates) {
+    const { x, y } = g.at;
+    const sides = { N: [x, y - 1], S: [x, y + 1], W: [x - 1, y] };
+    const need = [...g.sig];
+    const take = v => { const i = need.indexOf(v); if (i < 0) return false; need.splice(i, 1); return true; };
+    const free = [];
+    for (const sd of ['N', 'S', 'W']) {
+      const o = L.get(...sides[sd]);
+      if (sd === 'W' && fed.has(g.id)) { if (!take(fed.get(g.id))) return false; continue; }
+      if (o && o.t === 'gate') { if (!take('0')) return false; continue; }     // 隣の回路の本体は「空き」
+      if (o && o.t !== 'res' && o.t !== 'pin') return false;
+      free.push(sd);
+    }
+    const nets = need.filter(v => v !== '1' && v !== '0').sort((a, b) => Math.abs(netY(b) - y) - Math.abs(netY(a) - y));
+    for (const net of nets) {
+      const ny = netY(net);
+      const pref = ny < y ? ['N', 'W', 'S'] : ny > y ? ['S', 'W', 'N'] : ['W', 'N', 'S'];
+      const side = pref.find(sd => free.includes(sd));
+      if (!side) return false;
+      free.splice(free.indexOf(side), 1);
+      const [cx, cy] = sides[side];
+      const o = L.get(cx, cy);
+      if (o && !(o.t === 'pin' && o.n === net)) return false;          // 同じ線の口なら、2つの回路で1マスを兼ねる
+      if (!o) addPin(net, cx, cy);
+      L.addLink(cx, cy, BACK[side]);
+    }
+    for (const v of need.filter(v => v === '1' || v === '0')) {
+      // 空きは、口（pin）になっていない辺から
+      const side = free.find(sd => !L.get(...sides[sd]) || L.get(...sides[sd]).t === 'res');
+      if (!side) return false;
+      free.splice(free.indexOf(side), 1);
+      const [cx, cy] = sides[side];
+      // 「空き」のマスは、別の線が I・L・T 回路で通ってよい（回路の方の辺は開けない）
+      if (v === '0') { if (!L.get(cx, cy)) L.set(cx, cy, { t: L.tight ? 'zero' : 'res' }); continue; }
+      if (L.get(cx, cy)) return false;
+      L.set(cx, cy, { t: 'gen' }); L.parts.push({ type: 'generator', x: cx, y: cy, dir: 'N' });
+      for (const [dx, dy] of DIRS4) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx === x && ny === y) continue;
+        const o = L.get(nx, ny);
+        if (o && o.t !== 'res') return false;               // 発電機の隣に別の物があると電気が漏れる
+        L.reserve(nx, ny);
+      }
+    }
+  }
+  for (const g of gates) {
+    if (g.direct) continue;
+    const ox = g.at.x + 1, oy = g.at.y;
+    const o = L.get(ox, oy);
+    if (o && !(o.t === 'pin' && o.n === g.out)) return false;
+    if (sources[g.out]) { if (!o) addPin(g.out, ox, oy); }
+    else { if (!o) L.set(ox, oy, { t: 'pin', n: g.out }); sources[g.out] = { x: ox, y: oy }; }
+    L.addLink(ox, oy, 'W');
+  }
+  return true;
+}
+
 /** 型 pattern で並べてつなぐ。できなければ null。 */
 function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = false, nearOut = true, near = false, tight = false) {
   if (!root) return null;
@@ -394,8 +480,9 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
   for (const g of gates) (cols[dep[g.id]] = cols[dep[g.id]] || []).push(g);
   const tallest = Math.max(1, ...cols.filter(Boolean).map(c => c.length));
   // 周りに余白を取り、線が回り込めるようにする（できた設計図は外接する長方形に詰める）
-  const W = 4 + (maxDepth + 2) * pattern.col + 4 + 6;
-  const H = Math.max(n * pattern.inGap + 2, (pattern.line ? 1 : tallest) * pattern.row + 2, 7) + 6 + 8;
+  // pattern.W / H / leverY / at: 探索（searchCompact）で決めた盤の大きさ・レバーの行・回路の位置をそのまま使う
+  const W = pattern.W || 4 + (maxDepth + 2) * pattern.col + 4 + 6;
+  const H = pattern.H || Math.max(n * pattern.inGap + 2, (pattern.line ? 1 : tallest) * pattern.row + 2, 7) + 6 + 8;
   const L = new Layout(W, H);
   L.tight = tight;
   const pins = {};                  // net -> 入る口のマス [{x, y}]
@@ -411,7 +498,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
     sources[out] = { x: 2, y };
   } else {
     for (let i = 0; i < n; i++) {
-      const y = inTop + (perm ? perm.indexOf(i) : i) * pattern.inGap;     // perm: 上から並べるレバーの順
+      const y = pattern.leverY ? pattern.leverY[i] : inTop + (perm ? perm.indexOf(i) : i) * pattern.inGap;     // perm: 上から並べるレバーの順
       L.set(1, y, { t: 'lever', n: `in${i}` }); L.parts.push({ type: 'lever', x: 1, y, dir: 'N', input: i });
       for (const [x, yy] of [[0, y], [0, y - 1], [0, y + 1], [1, y - 1], [1, y + 1]]) L.reserve(x, yy);
       sources[`in${i}`] = { x: 2, y };
@@ -420,7 +507,8 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
   // 回路
   let lineX = 4;
   const netY = net => (sources[net] ? sources[net].y : (gates.find(g => g.out === net && g.at) || { at: { y: H / 2 } }).at.y);
-  cols.forEach((list, d) => {
+  if (pattern.at) { if (!placeAll(L, gates, out, pattern.at, pins, sources, addPin, netY)) return null; }
+  else cols.forEach((list, d) => {
     if (!list) return;
     // 入ってくる線の高さの平均で並べる（線が交わりにくくなる）
     const bary = g => g.ins.reduce((a, net) => a + netY(net), 0) / g.ins.length;
@@ -450,7 +538,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
         const side = pref.find(sd => free.has(sd));
         free.delete(side);
         addPin(net, ...sides[side]);
-        L.link.set(key(...sides[side]), BACK[side]);
+        L.addLink(...sides[side], BACK[side]);
       }
       const rest = [...free];
       for (const v of g.sig.filter(v => v === '1' || v === '0')) {
@@ -468,7 +556,7 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
       }
       if (sources[g.out]) addPin(g.out, x + 1, y);            // 「または」: 同じ線に出す2つ目以降の回路
       else { L.set(x + 1, y, { t: 'pin', n: g.out }); sources[g.out] = { x: x + 1, y }; }
-      L.link.set(key(x + 1, y), 'W');
+      L.addLink(x + 1, y, 'W');
     });
   });
   if (gates.some(g => g.bad || !g.at)) return null;
@@ -578,9 +666,9 @@ function layoutCircuit(n, root, pattern, boost = false, perm = null, direct = fa
       let foreign = false;
       for (const d of ORDER) {
         const nb = L.get(x + STEP[d][0], y + STEP[d][1]);
-        if (L.link.get(key(x, y)) === d || (nb && nb.t === 'cross')) own.push(d);
+        if ((L.link.get(key(x, y)) || new Set()).has(d) || (nb && nb.t === 'cross')) own.push(d);
         else if (nb && (nb.t === 'net' || nb.t === 'pin' || nb.t === 'lever') && nb.n === o.n) own.push(d);
-        else if (!nb || nb.t === 'res') open.push(d);
+        else if (!nb || nb.t === 'res' || nb.t === 'zero') open.push(d);
         else foreign = true;
       }
       if (!foreign) { parts.push({ type: 'wire', x, y, dir: 'N' }); continue; }
@@ -657,7 +745,7 @@ export function generateCircuits(registry, n, table) {
     let got = layoutCircuit(n, root, pattern, boost, perm, direct, true, near, tight);
     if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) {
       got = layoutCircuit(n, root, pattern, boost, perm, direct, false, near, tight);
-      if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return;
+      if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return null;
     }
     // 外接する長方形に詰める
     const x0 = Math.min(...got.parts.map(p => p.x)), y0 = Math.min(...got.parts.map(p => p.y));
@@ -666,25 +754,104 @@ export function generateCircuits(registry, n, table) {
       .map(p => ({ type: p.type, x: p.x - x0, y: p.y - y0, dir: p.dir }))
       .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.type < b.type ? -1 : 1));
     const sig = JSON.stringify(buildings);
-    if (seen.has(sig)) return;                      // 違う型でも同じ形になったら1つだけ
-    seen.add(sig);
     const width = x1 - x0 + 1, height = y1 - y0 + 1;
+    const made = { area: width * height, count: buildings.length };
+    if (seen.has(sig)) return made;                 // 違う型でも同じ形になったら1つだけ
+    seen.add(sig);
     const name = `回路 ${text}（${pattern.name}${boost ? '・強め直し' : ''}）`;
     candidates.push({
       pattern: pattern.id, boost, name, order,
-      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (near ? '・レバーを口の近くに' : '') + (got.tiles ? '・I/L/T回路' : '') + (perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
+      patternName: pattern.name + (boost ? '・強め直し' : '') + (got.moved ? '・レバー直付け' : '') + (near ? '・レバーを口の近くに' : '') + (got.tiles ? '・I/L/T回路' : '') + (perm && perm.some((v, i) => v !== i) ? `・${perm.map(i => INPUT_NAMES[i]).join('')}順` : ''),
       tiles: got.tiles || 0,
       gates: buildings.filter(b => b.type === 'logic-circuit').length, width, height, area: width * height, count: buildings.length,
       input: got.parts.filter(p => p.type === 'lever').sort((a, b) => a.input - b.input).map(p => ({ x: p.x - x0, y: p.y - y0 })),
       output: { x: got.out.x - x0, y: got.out.y - y0 },
       blueprint: { format: BLUEPRINT_FORMAT, version: BLUEPRINT_VERSION, name, width, height, buildings },
     });
+    return made;
   };
   tries.forEach(attempt(false));
+  // 型に当てはめるだけでは、手で詰めた回路ほど小さくならない（ユーザーの例: 6×7=42）。
+  // 小さな枠の中に、レバーと回路をばらばらに置いてはつなぐのを、決めた時間だけ繰り返す
+  if (root && root.kind !== 'always') searchCompact(n, root, SEARCH_MS, attempt(false), tries.length * 3);
+  // それでも1つも作れないとき（レバーの電気が届かない）は、レバーを口の近くへ移す形
   if (!candidates.length) tries.forEach((t, i) => attempt(true)(t, tries.length + i));
   for (const c of candidates) c.bends = countBends(c.blueprint.buildings);
   candidates.sort((a, b) => (a.area - b.area) || (a.count - b.count) || (a.order - b.order));
   return { terms, text, how, candidates: pickCircuits(candidates), all: candidates };
+}
+
+/** 詰めた配置を探す時間（ミリ秒）。長いほど小さい配置が見つかりやすい。 */
+export const SEARCH_MS = 3000;
+
+/** 決まった順の乱数（同じ条件なら毎回同じ結果にする）。 */
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * 小さな枠（横 bw・縦 bh）の中に、レバー（左端、2行以上あける）と回路をばらばらに置いて、
+ * I・L・T 回路ありでつなぐ。深い段の回路ほど右に来るように並べ替える。小さい枠から試す。
+ * 見つかった配置は try（attempt と同じ形）に渡し、確かめて候補に足してもらう。
+ */
+function searchCompact(n, root, ms, tryOne, order0) {
+  const { gates } = netlist(n, root, false);
+  if (!gates.length) return;
+  const dep = depths(gates);
+  const rand = rng(gates.length * 977 + n * 131 + JSON.stringify(gates.map(g => g.sig)).length);
+  const pick = (lo, hi) => lo + Math.floor(rand() * (hi - lo + 1));
+  const start = Date.now();
+  let k = 0;
+  const pool = [];                                   // よかった配置（面積・数の少ない順に5つ）
+  const run = (pl) => {
+    const pattern = { id: 'search', name: '探索', col: 3, row: 3, inGap: 2, ...pl };
+    const made = tryOne({ pattern, boost: false, perm: null, direct: pl.direct, tight: true }, order0 + k++);
+    if (!made) return;
+    pool.push({ pl, score: made.area * 100 + made.count });
+    pool.sort((a, b) => a.score - b.score);
+    pool.length = Math.min(pool.length, 5);
+  };
+  const leverOk = ys => ys.every((y, i) => ys.every((z, j) => i === j || Math.abs(y - z) >= 2));
+  // 前半: 小さな枠にばらばらに置く
+  while (Date.now() - start < ms / 2) {
+    const bw = pick(Math.max(2, gates.length), 4 + gates.length);
+    const bh = pick(2 * n - 1, 2 * n + 4);
+    const rows = [];
+    for (let tries = 0; rows.length < n && tries < 50; tries++) {
+      const y = 2 + pick(0, bh - 1);
+      if (rows.every(r => Math.abs(r - y) >= 2)) rows.push(y);
+    }
+    if (rows.length < n) continue;
+    rows.sort((a, b) => a - b);
+    const perm = [...Array(n).keys()].sort(() => rand() - 0.5);
+    const leverY = perm.map(i => rows[i]);
+    // 回路の位置。x は深さの順に並べ直す
+    const xs = gates.map(() => 3 + pick(0, bw - 1)).sort((a, b) => a - b);
+    const byDepth = [...gates].sort((a, b) => (dep[a.id] - dep[b.id]) || (rand() - 0.5));
+    const at = {};
+    byDepth.forEach((g, i) => { at[g.id] = { x: xs[i], y: 2 + pick(0, bh - 1) }; });
+    run({ W: 3 + bw + 4, H: 2 + bh + 3, leverY, at, direct: rand() < 0.5 });
+  }
+  // 後半: よかった配置の回路・レバーを1マスずつ動かして、もっと小さくならないか試す
+  while (Date.now() - start < ms && pool.length) {
+    const base = pool[Math.floor(rand() * pool.length)].pl;
+    const at = Object.fromEntries(Object.entries(base.at).map(([id, p]) => [id, { ...p }]));
+    const leverY = [...base.leverY];
+    const moves = pick(1, 2);
+    for (let m = 0; m < moves; m++) {
+      if (rand() < 0.75) {
+        const g = gates[Math.floor(rand() * gates.length)];
+        at[g.id].x = Math.max(3, Math.min(base.W - 3, at[g.id].x + pick(-1, 1)));
+        at[g.id].y = Math.max(2, Math.min(base.H - 3, at[g.id].y + pick(-1, 1)));
+      } else {
+        const i = Math.floor(rand() * n);
+        leverY[i] = Math.max(2, Math.min(base.H - 3, leverY[i] + pick(-1, 1)));
+      }
+    }
+    if (!leverOk(leverY)) continue;
+    run({ ...base, at, leverY, direct: rand() < 0.5 ? base.direct : !base.direct });
+  }
 }
 
 /** 電線（I・L・T 回路も）の曲がり角の数。つながる先がちょうど2方向で、それが縦と横のマス。T字は数えない。 */
