@@ -34,7 +34,8 @@
     "cross-circuit",
     "i-circuit",
     "l-circuit",
-    "t-circuit"
+    "t-circuit",
+    "lamp"
   ],
   "recipes": [
     "iron-plate",

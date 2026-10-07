@@ -1,0 +1,19 @@
+{
+  "id": "lamp",
+  "name": "ランプ(テスト)",
+  "size": {
+    "width": 1,
+    "height": 1
+  },
+  "color": "#57534e",
+  "directional": false,
+  "tags": [
+    "power"
+  ],
+  "note": "電気が届くと光る。回路の出力（ゴール）の目印に使う。電線と同じく電気を通す",
+  "lamp": true,
+  "power": {
+    "needs": true,
+    "conducts": true
+  }
+}

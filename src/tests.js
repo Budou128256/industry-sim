@@ -1394,6 +1394,33 @@ test('レバー: 入っているあいだは発電機なしでも電源になる
   eq(poweredAt(sim, 12, 1), true, '12マス先に届かない');
   eq(poweredAt(sim, 14, 1), false, '14マス先まで届いた');
 });
+test('ランプ: 電気が届くと光る（電気が要る建物と同じ）。電線と同じく電気を通す', () => {
+  const w = new World({ width: 8, height: 3 });
+  sigBoard(w, [['lever', 0, 1], ['wire', 1, 1], ['lamp', 2, 1], ['wire', 3, 1], ['lamp', 4, 1]]);
+  const sim = new Sim(w, reg);
+  eq([poweredAt(sim, 2, 1), poweredAt(sim, 4, 1)], [false, false]);
+  toggleLever(sim, 0, 1); sim.sync();
+  eq([poweredAt(sim, 2, 1), poweredAt(sim, 4, 1)], [true, true], 'ランプが光らない・先へ通さない');
+});
+test('交差回路: まっすぐ来た電気を、隣の論理回路の入力に入れる（ユーザーの設計図）', () => {
+  // 論理回路（東向き）の上の入力に A、下の入力に交差回路を縦に通った C。横に通る B は混ざらない
+  const w = new World({ width: 8, height: 7 });
+  sigBoard(w, [['lever', 0, 1], ['wire', 1, 1], ['wire', 2, 1], ['wire', 3, 1],
+               ['logic-circuit', 3, 2, 'E'], ['lamp', 4, 2],
+               ['cross-circuit', 3, 3], ['wire', 3, 4], ['lever', 3, 5],
+               ['lever', 0, 3], ['wire', 1, 3], ['wire', 2, 3], ['i-circuit', 4, 3, 'E'], ['wire', 5, 3], ['lamp', 6, 3]]);
+  const sim = new Sim(w, reg);
+  toggleLever(sim, 0, 1); sim.sync();
+  eq(poweredAt(sim, 4, 2), false, 'A だけで出た');
+  toggleLever(sim, 3, 5); sim.sync();
+  eq(poweredAt(sim, 4, 2), true, '交差回路を通った C が論理回路に入らない');
+  toggleLever(sim, 0, 1); sim.sync();
+  eq(poweredAt(sim, 4, 2), false, 'C だけで出た');
+  eq(poweredAt(sim, 6, 3), false, '縦の C が横へ漏れた');
+  toggleLever(sim, 3, 5); toggleLever(sim, 0, 3); sim.sync();
+  eq(poweredAt(sim, 6, 3), true, '横の B が通らない');
+  eq(poweredAt(sim, 4, 2), false, '横の B が論理回路に入った');
+});
 test('I回路: まっすぐだけ通し、横に並んだ別の線とはつながらない', () => {
   // y=2 の線（発電機から）と y=3 の線（電源なし）を I回路で隣り合わせても、y=3 の採掘機は動かない
   const w = new World({ width: 8, height: 6 });
@@ -1577,13 +1604,13 @@ test('回路の自動生成: 「どちらか一方だけ」は論理回路1つ�
   eq(c.blueprint.buildings.filter(b => b.type === 'logic-circuit').length, 1);
 });
 test('回路の自動生成: 1か所でしか使わないレバーは回路の口へ直接置き、線を延ばさない', () => {
-  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力の電線1つ。左端にレバーを並べていた頃は 8×5=40 だった
+  // 「どちらか一方だけ」: 回路1つ・レバー2つ・発電機1つ・出力のランプ1つ。左端にレバーを並べていた頃は 8×5=40 だった
   const c = generateCircuits(reg, 2, [false, true, true, false]).candidates[0];
   ok(c.area <= 9, `面積 ${c.area}`);
   eq(c.blueprint.buildings.filter(b => b.type === 'generator').length, 1, 'レバーの隣に発電機がある');
-  eq(c.blueprint.buildings.filter(b => b.type === 'wire').length, 1);
+  eq(c.blueprint.buildings.filter(b => b.type === 'wire').length, 0);
   const b = c.blueprint.buildings.find(x => x.x === c.output.x && x.y === c.output.y);
-  eq(b && b.type, 'wire', '出力は回路の正面の電線');
+  eq(b && b.type, 'lamp', '出力は回路の正面のランプ');
 });
 /** 生産ラインの設計図を貼って動かし、出口の箱に入った製品の数（WARMUP 秒後から MEASURE 秒間）を返す。 */
 function runLine(c, input, recipe, warm = 60, measure = 100) {

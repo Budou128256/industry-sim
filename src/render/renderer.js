@@ -197,7 +197,13 @@ export class Renderer {
     const { px, py } = this.toScreen(bld.x, bld.y);
     const w = size.width * t, h = size.height * t;
 
-    ctx.fillStyle = def.color || '#64748b';
+    // ランプ: 電気が届いていれば明るい黄色に光る
+    const lit = def.lamp && sim && !sim.unpowered.has(bld.id);
+    if (lit) {
+      ctx.fillStyle = 'rgba(253,224,71,0.25)';
+      ctx.fillRect(px - t * 0.3, py - t * 0.3, w + t * 0.6, h + t * 0.6);
+    }
+    ctx.fillStyle = lit ? '#fde047' : def.color || '#64748b';
     ctx.fillRect(px + 1, py + 1, w - 2, h - 2);
     const busy = sim && sim.busy.has(bld.id);       // このtickに動いたアーム
     ctx.strokeStyle = busy ? '#fbbf24' : 'rgba(0,0,0,0.45)';
@@ -227,7 +233,7 @@ export class Renderer {
       ctx.fillText(def.name[0], px + w / 2, py + h / 2 + 1);
     }
     // 電気が要るのに届いていない: 右上に赤い ×
-    if (sim && sim.unpowered.has(bld.id)) {
+    if (sim && sim.unpowered.has(bld.id) && !def.lamp) {   // ランプは消えているのがふつうなので × を出さない
       ctx.strokeStyle = '#f87171';
       ctx.lineWidth = Math.max(2, t * 0.07);
       ctx.lineCap = 'round';

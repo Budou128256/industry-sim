@@ -747,6 +747,8 @@ export function generateCircuits(registry, n, table) {
       got = layoutCircuit(n, root, pattern, boost, perm, direct, false, near, tight);
       if (!got || !verifyCircuit(registry, n, table, got.parts, got.out)) return null;
     }
+    // 出力のマスはランプにする（回路のゴールの目印。ユーザーの依頼 2026-10-07）。ランプも電線と同じく電気を通す
+    got.parts = got.parts.map(p => (p.x === got.out.x && p.y === got.out.y && p.type === 'wire' ? { ...p, type: 'lamp' } : p));
     // 外接する長方形に詰める
     const x0 = Math.min(...got.parts.map(p => p.x)), y0 = Math.min(...got.parts.map(p => p.y));
     const x1 = Math.max(...got.parts.map(p => p.x)), y1 = Math.max(...got.parts.map(p => p.y));
