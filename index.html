@@ -77,6 +77,7 @@
     .cg .cand { text-align: left; flex-wrap: wrap; gap: 2px 8px; }
     .cg .cand .n { flex: 1 0 100%; white-space: normal; }
     .cg .cand.on { outline: 2px solid #38bdf8; }
+    #cgEnds { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 0 8px; }
 </style>
 </head>
 <body>
@@ -116,9 +117,13 @@
     <details class="fold" id="cgFold">
     <summary class="group" title="クリックで開く・閉じる">回路の自動生成</summary>
     <div class="cg">
-      <label>入力（レバー）の数 <select id="cgN"><option>1</option><option selected>2</option><option>3</option></select></label>
+      <label>入力の数 <select id="cgN"><option>1</option><option selected>2</option><option>3</option></select></label>
       <div class="sub">電気を出したい組み合わせに印を付ける</div>
       <table id="cgTable"></table>
+      <details id="cgMore">
+        <summary class="sub" title="クリックで開く・閉じる">詳細設定（入力と出力の建物）</summary>
+        <div id="cgEnds"></div>
+      </details>
       <button id="btnGen" title="条件どおりに動く回路を型ごとに作り、シミュレーションで確かめて、面積の小さい順に並べる">回路を作る</button>
       <div id="cgText" class="sub"></div>
       <div id="cgList"></div>

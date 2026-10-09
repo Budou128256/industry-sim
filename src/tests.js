@@ -1610,6 +1610,22 @@ test('回路の自動生成: 「または」で組めない表は、「または
   const c = res.candidates[0];
   ok(verifyCircuit(reg, 3, table, c.blueprint.buildings.map(b => ({ ...b, input: c.input.findIndex(p => p.x === b.x && p.y === b.y) })), c.output), '表のとおりに光らない');
 });
+test('回路の自動生成: 詳細設定で入力の建物（感圧板）と出力の建物（採掘機）を選べる。初期はレバーとランプ', () => {
+  const table = [false, true, true, false];
+  const def = generateCircuits(reg, 2, table).candidates[0];
+  eq(def.blueprint.buildings.filter(b => b.type === 'lever').length, 2, '初期はレバー');
+  ok(def.blueprint.buildings.some(b => b.type === 'lamp'), '初期はランプ');
+  const c = generateCircuits(reg, 2, table, { inputs: ['pressure-plate', 'lever'], output: 'miner' }).candidates[0];
+  ok(c, '作れない');
+  const at = (p) => c.blueprint.buildings.find(b => b.x === p.x && b.y === p.y);
+  eq(at(c.input[0]).type, 'pressure-plate', 'A は感圧板');
+  eq(at(c.input[1]).type, 'lever', 'B はレバー');
+  eq(at(c.output).type, 'miner', '出力は採掘機');
+  ok(verifyCircuit(reg, 2, table, c.blueprint.buildings.map(b => ({ ...b, input: c.input.findIndex(p => p.x === b.x && p.y === b.y) })), c.output), '表のとおりに動かない');
+  let bad = null;
+  try { generateCircuits(reg, 2, table, { output: 'wire' }); } catch (e) { bad = e.message; }
+  ok(bad && bad.includes('出力に使えない'), '電線を出力にできてしまう');
+});
 test('回路の自動生成: ゴールのランプは出力の線の端に付け足し、ほかの線や回路に触れない', () => {
   for (const [n, bits] of [[2, '0110'], [3, '01010010'], [3, '10001100'], [3, '11111110']]) {
     for (const c of generateCircuits(reg, n, [...bits].map(v => v === '1')).candidates) {

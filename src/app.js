@@ -13,6 +13,7 @@ import { canPlace, pathCells } from './core/placement.js';
 import { rotateCW } from './core/grid.js';
 import { TICK_HZ } from './core/sim.js';
 import { lineRecipes } from './core/linegen.js';
+import { circuitEnds } from './core/circuitgen.js';
 import { Renderer } from './render/renderer.js';
 import { ViewSim, ViewWorld } from './render/view.js';
 import { Input } from './input/input.js';
@@ -265,6 +266,27 @@ function drawCircuitTable() {
   box.innerHTML = html;
   $('cgList').innerHTML = '';
   $('cgText').textContent = '';
+  drawCircuitEnds(n);
+}
+
+/**
+ * 詳細設定: 入力ごとの建物と、出力の建物を選ぶ（ユーザーの依頼 2026-10-07）。初期はレバーとランプ。
+ * 選んだ値は入力の数を変えても残す。
+ */
+function drawCircuitEnds(n) {
+  const ends = circuitEnds(state.registry);
+  const keep = [...$('cgEnds').querySelectorAll('select')].reduce((m, el) => (m[el.dataset.k] = el.value, m), {});
+  const opt = (list, want) => list.map(e => `<option value="${e.id}"${e.id === want ? ' selected' : ''}>${esc(e.name)}</option>`).join('');
+  let html = '';
+  for (let i = 0; i < n; i++) html += `<label>入力 ${CG_NAMES[i]} <select data-k="in${i}">${opt(ends.inputs, keep[`in${i}`] || 'lever')}</select></label>`;
+  html += `<label>出力 <select data-k="out">${opt(ends.outputs, keep.out || 'lamp')}</select></label>`;
+  $('cgEnds').innerHTML = html;
+}
+
+/** 詳細設定で選んだ入力・出力の建物。 */
+function circuitOpts(n) {
+  const v = k => { const el = $('cgEnds').querySelector(`select[data-k="${k}"]`); return el ? el.value : null; };
+  return { inputs: [...Array(n)].map((_, i) => v(`in${i}`) || 'lever'), output: v('out') || 'lamp' };
 }
 
 async function genCircuit() {
@@ -276,7 +298,7 @@ async function genCircuit() {
   $('cgText').textContent = '作っています…（型ごとに作って全部の組み合わせを確かめ、建物がいちばん少ない形を選んでいます）';
   $('cgList').innerHTML = '';
   try {
-    const res = await state.client.call('genCircuit', { n, table });
+    const res = await state.client.call('genCircuit', { n, table, opts: circuitOpts(n) });
     $('cgText').textContent = `式: ${res.text}`;
     showCircuitList(res, n);
   } catch (e) {
@@ -306,7 +328,7 @@ function showCircuitList(res, n) {
       for (const b of box.querySelectorAll('.cand')) b.classList.toggle('on', b === el);
       enterPaste(c.blueprint);
       const ins = c.input.map((p, k) => `${CG_NAMES[k]}=(${p.x},${p.y})`).join(' ');
-      status(`${c.kinds.join('・')}: ${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・電線の曲がり角 ${c.bends}。設計図の中で、レバー ${ins}、出力の電線 (${c.output.x},${c.output.y})。クリックで貼り付け`);
+      status(`${c.kinds.join('・')}: ${c.name} — ${c.width}×${c.height}（面積 ${c.area}）・${c.count}個・電線の曲がり角 ${c.bends}。設計図の中で、入力 ${ins}、出力 (${c.output.x},${c.output.y})。クリックで貼り付け`);
     };
     box.appendChild(el);
   });
